@@ -1,0 +1,2029 @@
+"use client";
+
+import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
+import { useRouter } from "next/navigation";
+
+import { supabase } from "@/lib/supabase";
+
+
+type Profile = {
+  id: string;
+  full_name: string;
+  username: string | null;
+  avatar_url: string | null;
+};
+
+
+type Conversation = {
+  id: string;
+  type: string;
+  name: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+
+type Message = {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  content: string;
+  created_at: string;
+  read_at: string | null;
+};
+
+
+type ContactInfo = {
+  conversationId: string | null;
+  lastMessage: string | null;
+  lastMessageAt: string | null;
+  unreadCount: number;
+};
+
+
+export default function ChatPage() {
+  const router = useRouter();
+
+
+  const [profile, setProfile] =
+    useState<Profile | null>(null);
+
+
+  const [currentUserId, setCurrentUserId] =
+    useState("");
+
+
+  const [users, setUsers] =
+    useState<Profile[]>([]);
+
+
+  const [contactInfo, setContactInfo] =
+    useState<Record<string, ContactInfo>>({});
+
+
+  const [
+    selectedUser,
+    setSelectedUser,
+  ] = useState<Profile | null>(null);
+
+
+  const [
+    selectedConversation,
+    setSelectedConversation,
+  ] = useState<Conversation | null>(null);
+
+
+  const [messages, setMessages] =
+    useState<Message[]>([]);
+
+
+  const [search, setSearch] =
+    useState("");
+
+
+  const [messageText, setMessageText] =
+    useState("");
+
+
+  const [loading, setLoading] =
+    useState(true);
+
+
+  const [loadingUsers, setLoadingUsers] =
+    useState(false);
+
+
+  const [loadingMessages, setLoadingMessages] =
+    useState(false);
+
+
+  const [startingChat, setStartingChat] =
+    useState(false);
+
+
+  const [sendingMessage, setSendingMessage] =
+    useState(false);
+
+
+  const [errorMessage, setErrorMessage] =
+    useState("");
+
+
+  const messagesEndRef =
+    useRef<HTMLDivElement | null>(null);
+
+
+  useEffect(() => {
+    loadChat();
+  }, []);
+
+
+  async function loadChat() {
+    try {
+      setLoading(true);
+      setErrorMessage("");
+
+
+      const {
+        data: {
+          session,
+        },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+
+      if (sessionError) {
+        throw new Error(
+          sessionError.message
+        );
+      }
+
+
+      if (!session?.user) {
+        router.replace("/login");
+        return;
+      }
+
+
+      const authUserId =
+        session.user.id;
+
+
+      setCurrentUserId(
+        authUserId
+      );
+
+
+      const {
+        data: myProfile,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select(
+          "id, full_name, username, avatar_url"
+        )
+        .eq(
+          "id",
+          authUserId
+        )
+        .maybeSingle();
+
+
+      if (profileError) {
+        console.error(
+          "Profile error:",
+          profileError
+        );
+      }
+
+
+      const currentProfile: Profile =
+        myProfile || {
+          id: authUserId,
+          full_name:
+            session.user.email
+              ?.split("@")[0] ||
+            "Pengguna",
+          username: null,
+          avatar_url: null,
+        };
+
+
+      setProfile(
+        currentProfile
+      );
+
+
+      await loadUsers(
+        authUserId
+      );
+
+
+      await loadContactInfo(
+        authUserId
+      );
+
+
+    } catch (error) {
+      console.error(
+        "Load chat error:",
+        error
+      );
+
+
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Gagal membuka Banda Chat."
+      );
+
+
+    } finally {
+      setLoading(false);
+    }
+  }
+
+
+  async function loadUsers(
+    authUserId: string
+  ) {
+    setLoadingUsers(true);
+
+
+    try {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("profiles")
+        .select(
+          "id, full_name, username, avatar_url"
+        )
+        .neq(
+          "id",
+          authUserId
+        )
+        .order(
+          "full_name",
+          {
+            ascending: true,
+          }
+        );
+
+
+      if (error) {
+        throw new Error(
+          error.message
+        );
+      }
+
+
+      setUsers(
+        data || []
+      );
+
+
+    } catch (error) {
+      console.error(
+        "Load users error:",
+        error
+      );
+
+
+      setErrorMessage(
+        error instanceof Error
+          ? "Gagal memuat pengguna: " +
+              error.message
+          : "Gagal memuat pengguna."
+      );
+
+
+    } finally {
+      setLoadingUsers(false);
+    }
+  }
+
+
+  /*
+   * ============================================================
+   * LOAD CONTACT INFO
+   * ============================================================
+   *
+   * BAGIAN INI YANG DIPERBAIKI.
+   *
+   * Tujuannya:
+   *
+   * - Satu akun hanya tampil satu kali.
+   * - Kalau satu akun mempunyai lebih dari satu conversation,
+   *   semuanya digabung.
+   * - Unread dari semua conversation dihitung.
+   * - Last message diambil dari conversation yang mempunyai
+   *   pesan terbaru.
+   *
+   * Jadi misalnya:
+   *
+   * Akun B
+   *   conversation lama  -> 2 pesan belum dibaca
+   *   conversation baru  -> 1 pesan belum dibaca
+   *
+   * Hasil di beranda:
+   *
+   * Akun B                    3
+   *
+   * bukan:
+   *
+   * Akun B
+   * Akun B
+   *
+   * ============================================================
+   */
+
+  async function loadContactInfo(
+    authUserId: string
+  ) {
+    try {
+      const {
+        data: myMemberships,
+        error: myMembershipError,
+      } = await supabase
+        .from("conversation_members")
+        .select(
+          "conversation_id"
+        )
+        .eq(
+          "user_id",
+          authUserId
+        );
+
+
+      if (myMembershipError) {
+        console.error(
+          "Load memberships error:",
+          myMembershipError
+        );
+
+        return;
+      }
+
+
+      if (
+        !myMemberships ||
+        myMemberships.length === 0
+      ) {
+        setContactInfo({});
+        return;
+      }
+
+
+      const conversationIds =
+        myMemberships.map(
+          (item) =>
+            item.conversation_id
+        );
+
+
+      /*
+       * Ambil seluruh anggota conversation.
+       */
+      const {
+        data: allMembers,
+        error: allMembersError,
+      } = await supabase
+        .from("conversation_members")
+        .select(
+          "conversation_id, user_id"
+        )
+        .in(
+          "conversation_id",
+          conversationIds
+        );
+
+
+      if (allMembersError) {
+        console.error(
+          "Load all members error:",
+          allMembersError
+        );
+
+        return;
+      }
+
+
+      /*
+       * conversation -> user lain
+       */
+      const conversationToUser:
+        Record<string, string> = {};
+
+
+      allMembers?.forEach(
+        (member) => {
+          if (
+            member.user_id !==
+            authUserId
+          ) {
+            conversationToUser[
+              member.conversation_id
+            ] = member.user_id;
+          }
+        }
+      );
+
+
+      /*
+       * Ambil semua pesan dari seluruh conversation
+       */
+      const {
+        data: allMessages,
+        error: messagesError,
+      } = await supabase
+        .from("messages")
+        .select(
+          "id, conversation_id, sender_id, content, created_at, read_at"
+        )
+        .in(
+          "conversation_id",
+          conversationIds
+        )
+        .order(
+          "created_at",
+          {
+            ascending: false,
+          }
+        );
+
+
+      if (messagesError) {
+        console.error(
+          "Load contact messages error:",
+          messagesError
+        );
+
+        return;
+      }
+
+
+      /*
+       * ========================================================
+       * AGREGASI PER USER
+       * ========================================================
+       *
+       * Ini yang memastikan satu akun hanya mempunyai
+       * satu ContactInfo.
+       */
+
+      const aggregatedInfo:
+        Record<string, ContactInfo> = {};
+
+
+      /*
+       * Kita proses setiap conversation.
+       */
+      Object.entries(
+        conversationToUser
+      ).forEach(
+        ([
+          conversationId,
+          userId,
+        ]) => {
+
+          const conversationMessages =
+            (allMessages || []).filter(
+              (message) =>
+                message.conversation_id ===
+                conversationId
+            );
+
+
+          /*
+           * Hitung pesan belum dibaca.
+           *
+           * HANYA pesan dari lawan bicara.
+           *
+           * Pesan sendiri tidak dihitung.
+           */
+          const unreadCount =
+            conversationMessages.filter(
+              (message) =>
+                message.sender_id !==
+                  authUserId &&
+                !message.read_at
+            ).length;
+
+
+          /*
+           * Karena allMessages sudah diurutkan
+           * descending berdasarkan created_at,
+           * pesan pertama adalah pesan terbaru.
+           */
+          const lastMessage =
+            conversationMessages.length > 0
+              ? conversationMessages[0]
+              : null;
+
+
+          /*
+           * Kalau user ini belum ada di aggregatedInfo,
+           * langsung buat.
+           */
+          if (
+            !aggregatedInfo[userId]
+          ) {
+            aggregatedInfo[userId] = {
+              conversationId:
+                lastMessage
+                  ? conversationId
+                  : conversationId,
+
+              lastMessage:
+                lastMessage?.content ||
+                null,
+
+              lastMessageAt:
+                lastMessage?.created_at ||
+                null,
+
+              unreadCount:
+                unreadCount,
+            };
+
+            return;
+          }
+
+
+          /*
+           * Kalau user sudah ada karena mempunyai
+           * conversation lain:
+           *
+           * 1. Tambahkan unread.
+           * 2. Bandingkan pesan terakhir.
+           * 3. Simpan conversation yang mempunyai
+           *    aktivitas terbaru.
+           */
+
+          aggregatedInfo[userId].unreadCount +=
+            unreadCount;
+
+
+          const existingLastMessageAt =
+            aggregatedInfo[userId]
+              .lastMessageAt;
+
+
+          const currentLastMessageAt =
+            lastMessage?.created_at ||
+            null;
+
+
+          if (
+            currentLastMessageAt &&
+            (
+              !existingLastMessageAt ||
+              new Date(
+                currentLastMessageAt
+              ).getTime() >
+                new Date(
+                  existingLastMessageAt
+                ).getTime()
+            )
+          ) {
+            aggregatedInfo[userId] = {
+              conversationId:
+                conversationId,
+
+              lastMessage:
+                lastMessage?.content ||
+                null,
+
+              lastMessageAt:
+                currentLastMessageAt,
+
+              unreadCount:
+                aggregatedInfo[userId]
+                  .unreadCount,
+            };
+          }
+        }
+      );
+
+
+      setContactInfo(
+        aggregatedInfo
+      );
+
+
+    } catch (error) {
+      console.error(
+        "Load contact info error:",
+        error
+      );
+    }
+  }
+
+
+  async function startChat(
+    user: Profile
+  ) {
+    if (!currentUserId) {
+      setErrorMessage(
+        "Sesi pengguna tidak ditemukan."
+      );
+
+      return;
+    }
+
+
+    if (startingChat) {
+      return;
+    }
+
+
+    setStartingChat(true);
+    setSelectedUser(user);
+    setErrorMessage("");
+
+
+    try {
+      const {
+        data: {
+          session,
+        },
+      } = await supabase.auth.getSession();
+
+
+      if (!session?.user) {
+        router.replace("/login");
+        return;
+      }
+
+
+      const authUserId =
+        session.user.id;
+
+
+      if (
+        authUserId === user.id
+      ) {
+        throw new Error(
+          "Anda tidak dapat chat dengan diri sendiri."
+        );
+      }
+
+
+      /*
+       * RPC tetap digunakan seperti sebelumnya.
+       *
+       * Jika conversation sudah ada,
+       * RPC akan mengembalikan conversation tersebut.
+       *
+       * Jika belum ada,
+       * RPC membuat conversation baru.
+       */
+      const {
+        data: conversationId,
+        error: rpcError,
+      } = await supabase.rpc(
+        "create_direct_conversation",
+        {
+          target_user_id:
+            user.id,
+        }
+      );
+
+
+      if (rpcError) {
+        console.error(
+          "Create conversation RPC error:",
+          rpcError
+        );
+
+        throw new Error(
+          rpcError.message
+        );
+      }
+
+
+      if (!conversationId) {
+        throw new Error(
+          "Conversation ID tidak ditemukan."
+        );
+      }
+
+
+      const conversation: Conversation = {
+        id:
+          conversationId as string,
+
+        type:
+          "direct",
+
+        name:
+          user.full_name,
+
+        created_by:
+          authUserId,
+
+        created_at:
+          new Date().toISOString(),
+      };
+
+
+      setSelectedConversation(
+        conversation
+      );
+
+
+      setMessages([]);
+
+
+      /*
+       * Load pesan conversation.
+       *
+       * Setelah conversation benar-benar dibuka,
+       * unread akan ditandai terbaca.
+       */
+      await loadMessages(
+        conversation.id,
+        authUserId
+      );
+
+
+    } catch (error) {
+      console.error(
+        "Start chat error:",
+        error
+      );
+
+
+      setErrorMessage(
+        error instanceof Error
+          ? "Gagal membuka chat: " +
+              error.message
+          : "Gagal membuka chat."
+      );
+
+
+    } finally {
+      setStartingChat(false);
+    }
+  }
+
+
+  async function loadMessages(
+    conversationId: string,
+    authUserId: string
+  ) {
+    setLoadingMessages(true);
+
+
+    try {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("messages")
+        .select(
+          "id, conversation_id, sender_id, content, created_at, read_at"
+        )
+        .eq(
+          "conversation_id",
+          conversationId
+        )
+        .order(
+          "created_at",
+          {
+            ascending: true,
+          }
+        );
+
+
+      if (error) {
+        throw new Error(
+          error.message
+        );
+      }
+
+
+      setMessages(
+        data || []
+      );
+
+
+      /*
+       * HANYA setelah conversation dibuka,
+       * pesan lawan dianggap sudah dibaca.
+       */
+      await markConversationRead(
+        conversationId,
+        authUserId
+      );
+
+
+    } catch (error) {
+      console.error(
+        "Load messages error:",
+        error
+      );
+
+
+      setErrorMessage(
+        error instanceof Error
+          ? "Gagal memuat pesan: " +
+              error.message
+          : "Gagal memuat pesan."
+      );
+
+
+    } finally {
+      setLoadingMessages(false);
+    }
+  }
+
+
+  /*
+   * ============================================================
+   * MARK CONVERSATION READ
+   * ============================================================
+   *
+   * PERBAIKAN:
+   *
+   * Tidak lagi bergantung kepada state "messages".
+   *
+   * RPC langsung menandai pesan di database.
+   *
+   * Setelah itu contactInfo dimuat ulang sehingga badge
+   * langsung menjadi 0.
+   */
+
+  async function markConversationRead(
+    conversationId: string,
+    authUserId: string
+  ) {
+    try {
+      const {
+        error,
+      } = await supabase.rpc(
+        "mark_conversation_read",
+        {
+          p_conversation_id:
+            conversationId,
+        }
+      );
+
+
+      if (error) {
+        console.error(
+          "Mark read error:",
+          error
+        );
+
+        return;
+      }
+
+
+      /*
+       * Update state messages secara langsung.
+       * Jadi tanda ✓✓ juga langsung berubah.
+       */
+      setMessages(
+        (previous) =>
+          previous.map(
+            (message) => {
+              if (
+                message.conversation_id ===
+                  conversationId &&
+                message.sender_id !==
+                  authUserId &&
+                !message.read_at
+              ) {
+                return {
+                  ...message,
+                  read_at:
+                    new Date().toISOString(),
+                };
+              }
+
+              return message;
+            }
+          )
+      );
+
+
+      /*
+       * Setelah database berubah,
+       * hitung ulang unread count.
+       */
+      await loadContactInfo(
+        authUserId
+      );
+
+
+    } catch (error) {
+      console.error(
+        "Mark conversation read error:",
+        error
+      );
+    }
+  }
+
+
+  /*
+   * ============================================================
+   * REALTIME - SEMUA PESAN
+   * ============================================================
+   *
+   * Ini digunakan untuk memperbarui daftar kontak dan badge
+   * tanpa perlu refresh browser.
+   */
+
+  useEffect(() => {
+    if (!currentUserId) {
+      return;
+    }
+
+
+    const channel =
+      supabase
+        .channel(
+          "all-chat-messages-" +
+            currentUserId
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "messages",
+          },
+          async () => {
+            await loadContactInfo(
+              currentUserId
+            );
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "messages",
+          },
+          async () => {
+            await loadContactInfo(
+              currentUserId
+            );
+          }
+        )
+        .subscribe();
+
+
+    return () => {
+      supabase.removeChannel(
+        channel
+      );
+    };
+
+
+  }, [
+    currentUserId,
+  ]);
+
+
+  /*
+   * ============================================================
+   * REALTIME - CONVERSATION YANG SEDANG DIBUKA
+   * ============================================================
+   */
+
+  useEffect(() => {
+    if (
+      !selectedConversation ||
+      !currentUserId
+    ) {
+      return;
+    }
+
+
+    const conversationId =
+      selectedConversation.id;
+
+
+    const channel =
+      supabase
+        .channel(
+          "selected-conversation-" +
+            conversationId
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "messages",
+            filter:
+              "conversation_id=eq." +
+              conversationId,
+          },
+          async (payload) => {
+
+            const newMessage =
+              payload.new as Message;
+
+
+            setMessages(
+              (previous) => {
+                const exists =
+                  previous.some(
+                    (message) =>
+                      message.id ===
+                      newMessage.id
+                  );
+
+
+                if (exists) {
+                  return previous;
+                }
+
+
+                return [
+                  ...previous,
+                  newMessage,
+                ];
+              }
+            );
+
+
+            /*
+             * Jika pesan datang dari lawan bicara
+             * sementara conversation sedang dibuka,
+             * langsung tandai terbaca.
+             */
+            if (
+              newMessage.sender_id !==
+              currentUserId
+            ) {
+              await supabase.rpc(
+                "mark_conversation_read",
+                {
+                  p_conversation_id:
+                    conversationId,
+                }
+              );
+
+
+              /*
+               * Update read_at di state.
+               */
+              setMessages(
+                (previous) =>
+                  previous.map(
+                    (message) => {
+                      if (
+                        message.id ===
+                        newMessage.id
+                      ) {
+                        return {
+                          ...message,
+                          read_at:
+                            new Date().toISOString(),
+                        };
+                      }
+
+                      return message;
+                    }
+                  )
+              );
+            }
+
+
+            await loadContactInfo(
+              currentUserId
+            );
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "messages",
+            filter:
+              "conversation_id=eq." +
+              conversationId,
+          },
+          async (payload) => {
+
+            const updatedMessage =
+              payload.new as Message;
+
+
+            setMessages(
+              (previous) =>
+                previous.map(
+                  (message) =>
+                    message.id ===
+                    updatedMessage.id
+                      ? updatedMessage
+                      : message
+                )
+            );
+
+
+            await loadContactInfo(
+              currentUserId
+            );
+          }
+        )
+        .subscribe();
+
+
+    return () => {
+      supabase.removeChannel(
+        channel
+      );
+    };
+
+
+  }, [
+    selectedConversation,
+    currentUserId,
+  ]);
+
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView(
+      {
+        behavior: "smooth",
+      }
+    );
+  }, [
+    messages,
+  ]);
+
+
+  async function sendMessage() {
+    const content =
+      messageText.trim();
+
+
+    if (!content) {
+      return;
+    }
+
+
+    if (!selectedConversation) {
+      setErrorMessage(
+        "Pilih percakapan terlebih dahulu."
+      );
+
+      return;
+    }
+
+
+    if (!currentUserId) {
+      setErrorMessage(
+        "Sesi pengguna tidak ditemukan."
+      );
+
+      return;
+    }
+
+
+    if (sendingMessage) {
+      return;
+    }
+
+
+    setSendingMessage(true);
+    setErrorMessage("");
+
+
+    try {
+      const {
+        data: {
+          session,
+        },
+      } = await supabase.auth.getSession();
+
+
+      if (!session?.user) {
+        router.replace("/login");
+        return;
+      }
+
+
+      const senderId =
+        session.user.id;
+
+
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("messages")
+        .insert({
+          conversation_id:
+            selectedConversation.id,
+
+          sender_id:
+            senderId,
+
+          content:
+            content,
+        })
+        .select(
+          "id, conversation_id, sender_id, content, created_at, read_at"
+        )
+        .single();
+
+
+      if (error) {
+        throw new Error(
+          error.message
+        );
+      }
+
+
+      if (data) {
+        setMessages(
+          (previous) => {
+            const exists =
+              previous.some(
+                (message) =>
+                  message.id === data.id
+              );
+
+
+            if (exists) {
+              return previous;
+            }
+
+
+            return [
+              ...previous,
+              data,
+            ];
+          }
+        );
+      }
+
+
+      setMessageText("");
+
+
+      await loadContactInfo(
+        senderId
+      );
+
+
+    } catch (error) {
+      console.error(
+        "Send message error:",
+        error
+      );
+
+
+      setErrorMessage(
+        error instanceof Error
+          ? "Pesan gagal dikirim: " +
+              error.message
+          : "Pesan gagal dikirim."
+      );
+
+
+    } finally {
+      setSendingMessage(false);
+    }
+  }
+
+
+  function handleMessageKeyDown(
+    event: React.KeyboardEvent<HTMLTextAreaElement>
+  ) {
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey
+    ) {
+      event.preventDefault();
+
+      sendMessage();
+    }
+  }
+
+
+  function formatTime(
+    dateString: string | null
+  ) {
+    if (!dateString) {
+      return "";
+    }
+
+
+    return new Date(
+      dateString
+    ).toLocaleTimeString(
+      "id-ID",
+      {
+        hour: "2-digit",
+        minute: "2-digit",
+      }
+    );
+  }
+
+
+  function formatContactTime(
+    dateString: string | null
+  ) {
+    if (!dateString) {
+      return "";
+    }
+
+
+    const date =
+      new Date(dateString);
+
+
+    const now =
+      new Date();
+
+
+    const isToday =
+      date.getDate() ===
+        now.getDate() &&
+      date.getMonth() ===
+        now.getMonth() &&
+      date.getFullYear() ===
+        now.getFullYear();
+
+
+    if (isToday) {
+      return formatTime(
+        dateString
+      );
+    }
+
+
+    return date.toLocaleDateString(
+      "id-ID",
+      {
+        day: "2-digit",
+        month: "2-digit",
+      }
+    );
+  }
+
+
+  function getInitial(
+    name: string
+  ) {
+    return (
+      name
+        ?.charAt(0)
+        .toUpperCase() || "B"
+    );
+  }
+
+
+  const filteredUsers =
+    users.filter(
+      (user) => {
+        const keyword =
+          search
+            .trim()
+            .toLowerCase();
+
+
+        if (!keyword) {
+          return true;
+        }
+
+
+        return (
+          user.full_name
+            .toLowerCase()
+            .includes(
+              keyword
+            ) ||
+          user.username
+            ?.toLowerCase()
+            .includes(
+              keyword
+            )
+        );
+      }
+    );
+
+
+  async function handleLogout() {
+    const {
+      error,
+    } = await supabase.auth.signOut();
+
+
+    if (error) {
+      setErrorMessage(
+        "Gagal keluar: " +
+          error.message
+      );
+
+      return;
+    }
+
+
+    router.replace(
+      "/login"
+    );
+  }
+
+
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
+
+        <div className="text-center">
+
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-white/10 border-t-blue-500" />
+
+          <p className="text-sm text-slate-400">
+            Membuka Banda Chat...
+          </p>
+
+        </div>
+
+      </main>
+    );
+  }
+
+
+  return (
+    <main className="flex min-h-screen flex-col bg-slate-950 text-white">
+
+      <header className="border-b border-white/10 bg-slate-900">
+
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-3">
+
+          <div className="flex items-center gap-3">
+
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-xl font-bold shadow-lg shadow-blue-600/20">
+              B
+            </div>
+
+            <div>
+
+              <h1 className="font-bold">
+                Banda Chat
+              </h1>
+
+              <p className="text-xs text-green-400">
+                ● Online
+              </p>
+
+            </div>
+
+          </div>
+
+
+          <div className="flex items-center gap-3">
+
+            <div className="hidden text-right sm:block">
+
+              <p className="text-sm font-semibold">
+                {profile?.full_name}
+              </p>
+
+              {profile?.username && (
+                <p className="text-xs text-slate-400">
+                  @{profile.username}
+                </p>
+              )}
+
+            </div>
+
+
+            {profile?.avatar_url ? (
+
+              <img
+                src={profile.avatar_url}
+                alt={profile.full_name}
+                className="h-10 w-10 rounded-full object-cover"
+              />
+
+            ) : (
+
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 font-bold">
+                {getInitial(
+                  profile?.full_name || "B"
+                )}
+              </div>
+
+            )}
+
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded-xl px-3 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
+            >
+              Keluar
+            </button>
+
+          </div>
+
+        </div>
+
+      </header>
+
+
+      <div className="flex flex-1">
+
+        <div className="mx-auto flex w-full max-w-7xl">
+
+
+          {/* SIDEBAR SATU DAFTAR KONTAK */}
+
+          <aside className="w-full border-r border-white/10 bg-slate-900 md:w-80 md:shrink-0">
+
+            <div className="border-b border-white/10 p-4">
+
+              <h2 className="text-lg font-bold">
+                Percakapan
+              </h2>
+
+
+              <input
+                type="text"
+                placeholder="Cari pengguna..."
+                value={search}
+                onChange={(event) =>
+                  setSearch(
+                    event.target.value
+                  )
+                }
+                className="mt-4 w-full rounded-xl border border-white/10 bg-slate-800 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-500"
+              />
+
+            </div>
+
+
+            <div className="p-4">
+
+              <div className="mb-3 flex items-center justify-between">
+
+                <h3 className="text-sm font-semibold text-slate-300">
+                  Kontak Banda Chat
+                </h3>
+
+                <span className="text-xs text-slate-500">
+                  {users.length}
+                </span>
+
+              </div>
+
+
+              {loadingUsers ? (
+
+                <p className="py-6 text-center text-sm text-slate-500">
+                  Memuat pengguna...
+                </p>
+
+              ) : filteredUsers.length === 0 ? (
+
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-5 text-center">
+
+                  <div className="text-3xl">
+                    👥
+                  </div>
+
+                  <p className="mt-3 text-sm font-semibold">
+                    Belum ada pengguna lain
+                  </p>
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    Daftar pengguna akan muncul di sini.
+                  </p>
+
+                </div>
+
+              ) : (
+
+                <div className="space-y-2">
+
+                  {filteredUsers.map(
+                    (user) => {
+
+                      const info =
+                        contactInfo[
+                          user.id
+                        ];
+
+
+                      const isSelected =
+                        selectedUser?.id ===
+                        user.id;
+
+
+                      return (
+                        <button
+                          key={user.id}
+                          type="button"
+                          onClick={() =>
+                            startChat(
+                              user
+                            )
+                          }
+                          disabled={
+                            startingChat
+                          }
+                          className={`w-full rounded-2xl border p-3 text-left transition ${
+                            isSelected
+                              ? "border-blue-500 bg-blue-500/10"
+                              : "border-white/10 bg-white/5 hover:bg-white/10"
+                          } disabled:cursor-not-allowed disabled:opacity-60`}
+                        >
+
+                          <div className="flex items-center gap-3">
+
+                            {user.avatar_url ? (
+
+                              <img
+                                src={user.avatar_url}
+                                alt={user.full_name}
+                                className="h-11 w-11 shrink-0 rounded-full object-cover"
+                              />
+
+                            ) : (
+
+                              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-600 font-bold">
+                                {getInitial(
+                                  user.full_name
+                                )}
+                              </div>
+
+                            )}
+
+
+                            <div className="min-w-0 flex-1">
+
+                              <div className="flex items-center justify-between gap-2">
+
+                                <p className="truncate text-sm font-semibold">
+                                  {user.full_name}
+                                </p>
+
+
+                                <div className="flex shrink-0 items-center gap-2">
+
+                                  {info?.lastMessageAt && (
+
+                                    <span className="text-[10px] text-slate-500">
+                                      {formatContactTime(
+                                        info.lastMessageAt
+                                      )}
+                                    </span>
+
+                                  )}
+
+
+                                  {info &&
+                                    info.unreadCount > 0 && (
+
+                                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-green-500 px-1 text-[10px] font-bold text-slate-950">
+                                        {info.unreadCount > 99
+                                          ? "99+"
+                                          : info.unreadCount}
+                                      </span>
+
+                                  )}
+
+                                </div>
+
+                              </div>
+
+
+                              <p className="mt-1 truncate text-xs text-slate-500">
+
+                                {info?.lastMessage
+                                  ? info.lastMessage
+                                  : user.username
+                                  ? "@" +
+                                    user.username
+                                  : "Belum ada pesan"}
+
+                              </p>
+
+                            </div>
+
+                          </div>
+
+                        </button>
+                      );
+                    }
+                  )}
+
+                </div>
+
+              )}
+
+            </div>
+
+          </aside>
+
+
+          {/* CHAT AREA */}
+
+          <section className="hidden min-w-0 flex-1 flex-col md:flex">
+
+            {!selectedConversation ? (
+
+              <div className="flex flex-1 items-center justify-center">
+
+                <div className="max-w-md px-6 text-center">
+
+                  <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-blue-600 text-3xl font-bold shadow-lg shadow-blue-600/20">
+                    B
+                  </div>
+
+                  <h2 className="mt-6 text-2xl font-bold">
+                    Pilih kontak untuk mulai chat
+                  </h2>
+
+                  <p className="mt-3 text-sm leading-6 text-slate-500">
+                    Setiap akun hanya muncul satu kali.
+                    Klik kontak untuk membuka atau
+                    melanjutkan percakapan sebelumnya.
+                  </p>
+
+                </div>
+
+              </div>
+
+            ) : (
+
+              <>
+
+                {/* CHAT HEADER */}
+
+                <div className="border-b border-white/10 bg-slate-900 px-5 py-4">
+
+                  <div className="flex items-center gap-3">
+
+                    {selectedUser?.avatar_url ? (
+
+                      <img
+                        src={selectedUser.avatar_url}
+                        alt={selectedUser.full_name}
+                        className="h-11 w-11 rounded-full object-cover"
+                      />
+
+                    ) : (
+
+                      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 font-bold">
+                        {getInitial(
+                          selectedUser?.full_name ||
+                            "B"
+                        )}
+                      </div>
+
+                    )}
+
+
+                    <div>
+
+                      <h2 className="font-semibold">
+                        {selectedUser?.full_name}
+                      </h2>
+
+                      {selectedUser?.username && (
+                        <p className="text-xs text-slate-500">
+                          @{selectedUser.username}
+                        </p>
+                      )}
+
+                      <p className="mt-1 text-xs text-green-400">
+                        ● Online
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                </div>
+
+
+                {/* MESSAGES */}
+
+                <div className="flex-1 overflow-y-auto px-5 py-6">
+
+                  {loadingMessages ? (
+
+                    <div className="flex h-full items-center justify-center">
+
+                      <div className="text-center">
+
+                        <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-white/10 border-t-blue-500" />
+
+                        <p className="text-sm text-slate-500">
+                          Memuat pesan...
+                        </p>
+
+                      </div>
+
+                    </div>
+
+                  ) : messages.length === 0 ? (
+
+                    <div className="flex h-full items-center justify-center">
+
+                      <div className="text-center">
+
+                        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-2xl">
+                          💬
+                        </div>
+
+                        <h3 className="mt-5 text-lg font-bold">
+                          Mulai percakapan
+                        </h3>
+
+                        <p className="mt-2 text-sm text-slate-500">
+                          Kirim pesan pertama kepada{" "}
+                          {selectedUser?.full_name}.
+                        </p>
+
+                      </div>
+
+                    </div>
+
+                  ) : (
+
+                    <div className="mx-auto max-w-3xl space-y-3">
+
+                      {messages.map(
+                        (message) => {
+
+                          const isMine =
+                            message.sender_id ===
+                            currentUserId;
+
+
+                          return (
+                            <div
+                              key={message.id}
+                              className={`flex ${
+                                isMine
+                                  ? "justify-end"
+                                  : "justify-start"
+                              }`}
+                            >
+
+                              <div
+                                className={`max-w-[75%] rounded-2xl px-4 py-3 ${
+                                  isMine
+                                    ? "rounded-br-md bg-blue-600 text-white"
+                                    : "rounded-bl-md bg-white/10 text-slate-200"
+                                }`}
+                              >
+
+                                <p className="whitespace-pre-wrap break-words text-sm leading-6">
+                                  {message.content}
+                                </p>
+
+
+                                <div className="mt-1 flex items-center justify-end gap-1">
+
+                                  <span
+                                    className={`text-[10px] ${
+                                      isMine
+                                        ? "text-blue-100"
+                                        : "text-slate-500"
+                                    }`}
+                                  >
+                                    {formatTime(
+                                      message.created_at
+                                    )}
+                                  </span>
+
+
+                                  {isMine && (
+
+                                    <span
+                                      className={`text-[11px] font-bold ${
+                                        message.read_at
+                                          ? "text-green-300"
+                                          : "text-blue-100"
+                                      }`}
+                                      title={
+                                        message.read_at
+                                          ? "Sudah dibaca"
+                                          : "Sudah terkirim"
+                                      }
+                                    >
+                                      {message.read_at
+                                        ? "✓✓"
+                                        : "✓"}
+                                    </span>
+
+                                  )}
+
+                                </div>
+
+                              </div>
+
+                            </div>
+                          );
+                        }
+                      )}
+
+
+                      <div
+                        ref={messagesEndRef}
+                      />
+
+                    </div>
+
+                  )}
+
+                </div>
+
+
+                {/* INPUT */}
+
+                <div className="border-t border-white/10 bg-slate-900 p-4">
+
+                  <div className="mx-auto flex max-w-3xl items-end gap-3">
+
+                    <textarea
+                      value={messageText}
+                      onChange={(event) =>
+                        setMessageText(
+                          event.target.value
+                        )
+                      }
+                      onKeyDown={
+                        handleMessageKeyDown
+                      }
+                      disabled={
+                        sendingMessage
+                      }
+                      rows={1}
+                      placeholder="Tulis pesan..."
+                      className="max-h-32 min-h-[48px] flex-1 resize-none rounded-2xl border border-white/10 bg-slate-800 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-500 disabled:opacity-50"
+                    />
+
+
+                    <button
+                      type="button"
+                      onClick={
+                        sendMessage
+                      }
+                      disabled={
+                        sendingMessage ||
+                        !messageText.trim()
+                      }
+                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-xl font-bold transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {sendingMessage
+                        ? "..."
+                        : "➤"}
+                    </button>
+
+                  </div>
+
+
+                  <p className="mx-auto mt-2 max-w-3xl text-[10px] text-slate-600">
+                    Enter untuk mengirim · Shift +
+                    Enter untuk baris baru
+                  </p>
+
+                </div>
+
+              </>
+
+            )}
+
+          </section>
+
+        </div>
+
+      </div>
+
+
+      {/* ERROR */}
+
+      {errorMessage && (
+
+        <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-2xl border border-red-500/20 bg-red-950/95 p-4 text-sm text-red-300 shadow-2xl">
+
+          <div className="flex items-start gap-3">
+
+            <span>
+              ⚠️
+            </span>
+
+            <p className="flex-1">
+              {errorMessage}
+            </p>
+
+            <button
+              type="button"
+              onClick={() =>
+                setErrorMessage("")
+              }
+              className="text-red-400 hover:text-white"
+            >
+              ✕
+            </button>
+
+          </div>
+
+        </div>
+
+      )}
+
+    </main>
+  );
+}
