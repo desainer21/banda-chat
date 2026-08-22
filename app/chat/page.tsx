@@ -46,42 +46,7 @@ type PresenceData = {
   online_at?: string;
 };
 
-/* ============================================================
-   LOGO BANDA CHAT
-   SATU DESAIN UNTUK SEMUA TEMPAT
-   BENTUK BALON TEKS + UJUNG LANCIP + HURUF B
-   ============================================================ */
-
-function BandaChatLogo({
-  size = "large",
-}: {
-  size?: "small" | "large";
-}) {
-  const isSmall = size === "small";
-
-  return (
-    <div
-      className={`relative mx-auto flex items-center justify-center rounded-[24px] bg-green-500 font-bold text-white shadow-xl shadow-green-500/20 ${
-        isSmall
-          ? "h-16 w-20 text-2xl"
-          : "h-20 w-24 text-3xl"
-      }`}
-    >
-      <span className="relative z-10">
-        B
-      </span>
-
-      {/* UJUNG LANCIP BALON TEKS */}
-      <span
-        className={`absolute bottom-[-9px] left-[18px] h-0 w-0 border-l-[11px] border-r-[11px] border-t-[16px] border-l-transparent border-r-transparent border-t-green-500 ${
-          isSmall
-            ? "left-[14px]"
-            : "left-[18px]"
-        }`}
-      />
-    </div>
-  );
-}
+const CHAT_SPLASH_KEY = "banda-chat-splash-shown";
 
 export default function ChatPage() {
   const router = useRouter();
@@ -169,6 +134,53 @@ export default function ChatPage() {
   const loadingChatRef =
     useRef(false);
 
+  /*
+   * ============================================================
+   * SPLASH / LOADING
+   * ============================================================
+   *
+   * Loading hanya ditampilkan satu kali dalam satu tab/browser
+   * session.
+   *
+   * Setelah splash pernah ditampilkan, halaman chat tidak akan
+   * menampilkan splash lagi ketika login -> /chat atau refresh.
+   */
+  useEffect(() => {
+    let shouldShowSplash = false;
+
+    try {
+      const splashShown =
+        sessionStorage.getItem(
+          CHAT_SPLASH_KEY
+        );
+
+      if (!splashShown) {
+        shouldShowSplash = true;
+
+        sessionStorage.setItem(
+          CHAT_SPLASH_KEY,
+          "1"
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Session storage error:",
+        error
+      );
+
+      /*
+       * Jika sessionStorage tidak tersedia,
+       * tetap jalankan aplikasi tanpa memaksa
+       * loading berulang.
+       */
+      shouldShowSplash = false;
+    }
+
+    if (!shouldShowSplash) {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     selectedConversationIdRef.current =
       selectedConversation?.id || null;
@@ -195,15 +207,37 @@ export default function ChatPage() {
           return;
         }
 
+        /*
+         * JANGAN memanggil loadChat() lagi ketika SIGNED_IN.
+         *
+         * Ini yang mencegah loading logo muncul kembali
+         * setelah login berhasil.
+         *
+         * loadChat() sudah dijalankan ketika halaman /chat
+         * pertama kali mounted.
+         */
+
         if (
           event === "SIGNED_IN" ||
           event === "INITIAL_SESSION" ||
           event === "TOKEN_REFRESHED"
         ) {
-          if (session?.user) {
-            if (!loadingChatRef.current) {
-              void loadChat();
-            }
+          if (!session?.user) {
+            return;
+          }
+
+          /*
+           * Jika data chat belum dimuat karena alasan tertentu,
+           * loadChat tetap boleh dijalankan.
+           *
+           * Namun loading tidak akan dinyalakan kembali
+           * jika sudah selesai.
+           */
+          if (
+            !loadingChatRef.current &&
+            !currentUserId
+          ) {
+            void loadChat();
           }
         }
 
@@ -212,6 +246,9 @@ export default function ChatPage() {
           setProfile(null);
           setContactInfo({});
           setUsers([]);
+          setSelectedUser(null);
+          setSelectedConversation(null);
+          setMessages([]);
 
           router.replace("/login");
         }
@@ -222,7 +259,7 @@ export default function ChatPage() {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [router]);
+  }, [router, currentUserId]);
 
   async function loadChat() {
     if (loadingChatRef.current) {
@@ -232,7 +269,6 @@ export default function ChatPage() {
     loadingChatRef.current = true;
 
     try {
-      setLoading(true);
       setErrorMessage("");
 
       const {
@@ -241,7 +277,9 @@ export default function ChatPage() {
       } = await supabase.auth.getSession();
 
       if (sessionError) {
-        throw new Error(sessionError.message);
+        throw new Error(
+          sessionError.message
+        );
       }
 
       if (!session?.user) {
@@ -249,7 +287,8 @@ export default function ChatPage() {
         return;
       }
 
-      const authUserId = session.user.id;
+      const authUserId =
+        session.user.id;
 
       setCurrentUserId(authUserId);
 
@@ -298,7 +337,13 @@ export default function ChatPage() {
           : "Gagal membuka Banda Chat."
       );
     } finally {
+      /*
+       * Loading dimatikan setelah data utama selesai.
+       *
+       * Tidak ada lagi setLoading(true) ketika login.
+       */
       setLoading(false);
+
       loadingChatRef.current = false;
     }
   }
@@ -1741,18 +1786,17 @@ export default function ChatPage() {
 
   /* ============================================================
      LOADING
-     LOGO SUDAH DIGANTI KE BALON TEKS
      ============================================================ */
 
   if (loading) {
     return (
       <main className="flex min-h-[100dvh] h-[100dvh] items-center justify-center overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100">
         <div className="text-center">
+          {/* LOGO BANDA CHAT - TETAP SAMA */}
+          <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[38%] bg-green-500 text-2xl font-bold text-white shadow-lg shadow-green-500/20">
+            B
 
-          <div className="mb-5">
-            <BandaChatLogo
-              size="small"
-            />
+            <span className="absolute bottom-0 left-1 h-5 w-5 -translate-x-1/2 rotate-45 bg-green-500" />
           </div>
 
           <div className="mx-auto mb-4 h-9 w-9 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
@@ -1767,15 +1811,12 @@ export default function ChatPage() {
 
   return (
     <main className="flex min-h-[100dvh] h-[100dvh] flex-col overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100 text-slate-900">
-
       {/* ========================================================
           HEADER
-          TIDAK ADA LOGO DI SINI
           ======================================================== */}
 
       <header className="z-20 shrink-0 border-b border-blue-100 bg-blue-600 shadow-sm">
         <div className="mx-auto flex h-[68px] w-full max-w-7xl items-center justify-between px-4">
-
           <div className="flex items-center">
             <div>
               <h1 className="text-lg font-bold text-white">
@@ -1789,7 +1830,6 @@ export default function ChatPage() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-
             <div className="hidden text-right sm:block">
               <p className="text-sm font-semibold text-white">
                 {profile?.full_name}
@@ -1853,7 +1893,6 @@ export default function ChatPage() {
             }`}
           >
             <div className="shrink-0 border-b border-slate-100 bg-white p-4">
-
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-bold text-slate-900">
@@ -1890,7 +1929,6 @@ export default function ChatPage() {
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50/60 p-3">
-
               <div className="mb-3 flex items-center justify-between px-1">
                 <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">
                   Kontak Banda Chat
@@ -1912,7 +1950,6 @@ export default function ChatPage() {
               ) : filteredUsers.length ===
                 0 ? (
                 <div className="rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm">
-
                   <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-2xl">
                     👥
                   </div>
@@ -1963,7 +2000,6 @@ export default function ChatPage() {
                           } disabled:cursor-not-allowed disabled:opacity-60`}
                         >
                           <div className="flex items-center gap-3">
-
                             <div className="relative shrink-0">
                               {user.avatar_url ? (
                                 <img
@@ -1990,7 +2026,6 @@ export default function ChatPage() {
 
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center justify-between gap-2">
-
                                 <p className="truncate text-sm font-semibold text-slate-800">
                                   {
                                     user.full_name
@@ -1998,7 +2033,6 @@ export default function ChatPage() {
                                 </p>
 
                                 <div className="flex shrink-0 items-center gap-2">
-
                                   {info?.lastMessageAt && (
                                     <span className="text-[10px] text-slate-400">
                                       {formatContactTime(
@@ -2052,20 +2086,17 @@ export default function ChatPage() {
           >
             {!selectedConversation ? (
               <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-
                 <div className="max-w-md px-6 text-center">
 
-                  {/* =================================================
-                      LOGO BANDA CHAT
-                      SAMA DENGAN LOGO LOADING
-                      BALON TEKS + UJUNG LANCIP + B
-                      ================================================= */}
+                  {/* LOGO BANDA CHAT - TETAP SAMA */}
 
-                  <BandaChatLogo
-                    size="large"
-                  />
+                  <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-[38%] bg-green-500 text-3xl font-bold text-white shadow-xl shadow-green-500/20">
+                    B
 
-                  <h2 className="mt-8 text-2xl font-bold text-slate-800">
+                    <span className="absolute bottom-0 left-1 h-5 w-5 -translate-x-1/2 rotate-45 bg-green-500" />
+                  </div>
+
+                  <h2 className="mt-6 text-2xl font-bold text-slate-800">
                     Pilih kontak untuk mulai
                     chat
                   </h2>
@@ -2086,7 +2117,6 @@ export default function ChatPage() {
 
                 <div className="shrink-0 border-b border-slate-100 bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:px-5 sm:py-4">
                   <div className="flex items-center gap-3">
-
                     <button
                       type="button"
                       onClick={
@@ -2126,7 +2156,6 @@ export default function ChatPage() {
                     </div>
 
                     <div className="min-w-0">
-
                       <h2 className="truncate font-semibold text-slate-800">
                         {
                           selectedUser?.full_name
@@ -2152,9 +2181,7 @@ export default function ChatPage() {
 
                           <span className="flex items-center gap-1">
                             <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-500" />
-
                             <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-500 [animation-delay:150ms]" />
-
                             <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-500 [animation-delay:300ms]" />
                           </span>
                         </div>
@@ -2178,11 +2205,9 @@ export default function ChatPage() {
                     ================================================== */}
 
                 <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-gradient-to-br from-sky-50/80 via-white to-blue-50/80 px-4 py-5 pb-6 sm:px-5 sm:py-6">
-
                   {loadingMessages ? (
                     <div className="flex h-full items-center justify-center">
                       <div className="text-center">
-
                         <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
 
                         <p className="text-sm text-slate-400">
@@ -2194,7 +2219,6 @@ export default function ChatPage() {
                     0 ? (
                     <div className="flex h-full items-center justify-center">
                       <div className="text-center">
-
                         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-2xl shadow-sm">
                           💬
                         </div>
@@ -2214,7 +2238,6 @@ export default function ChatPage() {
                     </div>
                   ) : (
                     <div className="mx-auto max-w-3xl space-y-3">
-
                       {messages.map(
                         (message) => {
                           const isMine =
@@ -2239,7 +2262,6 @@ export default function ChatPage() {
                                     : "rounded-bl-md border border-slate-200 bg-white text-slate-700"
                                 }`}
                               >
-
                                 <p className="whitespace-pre-wrap break-words text-sm leading-6">
                                   {
                                     message.content
@@ -2247,7 +2269,6 @@ export default function ChatPage() {
                                 </p>
 
                                 <div className="mt-1 flex items-center justify-end gap-1">
-
                                   <span
                                     className={`text-[10px] ${
                                       isMine
@@ -2285,12 +2306,9 @@ export default function ChatPage() {
                       ) && (
                         <div className="flex justify-start">
                           <div className="rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 shadow-sm">
-
                             <div className="flex items-center gap-1">
                               <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400" />
-
                               <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:150ms]" />
-
                               <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:300ms]" />
                             </div>
                           </div>
@@ -2312,9 +2330,7 @@ export default function ChatPage() {
                     ================================================== */}
 
                 <div className="shrink-0 border-t border-slate-100 bg-white px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_15px_rgba(15,23,42,0.03)] sm:p-4">
-
                   <div className="mx-auto flex max-w-3xl items-end gap-2 sm:gap-3">
-
                     <textarea
                       value={
                         messageText
@@ -2369,9 +2385,7 @@ export default function ChatPage() {
 
       {errorMessage && (
         <div className="fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-2xl border border-red-200 bg-white p-4 text-sm text-red-600 shadow-2xl">
-
           <div className="flex items-start gap-3">
-
             <span>⚠️</span>
 
             <p className="flex-1">
