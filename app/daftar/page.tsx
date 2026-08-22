@@ -21,8 +21,10 @@ export default function DaftarPage() {
     useState("");
 
   const [loading, setLoading] = useState(false);
+
   const [errorMessage, setErrorMessage] =
     useState("");
+
   const [successMessage, setSuccessMessage] =
     useState("");
 
@@ -38,10 +40,6 @@ export default function DaftarPage() {
     setErrorMessage("");
     setSuccessMessage("");
 
-    /*
-     * Validasi nama.
-     * Tetap seperti kode sebelumnya.
-     */
     if (!fullName.trim()) {
       setErrorMessage(
         "Nama lengkap wajib diisi."
@@ -49,9 +47,6 @@ export default function DaftarPage() {
       return;
     }
 
-    /*
-     * Validasi email.
-     */
     if (!email.trim()) {
       setErrorMessage(
         "Email wajib diisi."
@@ -59,9 +54,6 @@ export default function DaftarPage() {
       return;
     }
 
-    /*
-     * Validasi nomor telepon.
-     */
     if (!phone.trim()) {
       setErrorMessage(
         "Nomor telepon wajib diisi."
@@ -69,9 +61,6 @@ export default function DaftarPage() {
       return;
     }
 
-    /*
-     * Validasi password.
-     */
     if (!password) {
       setErrorMessage(
         "Password wajib diisi."
@@ -86,9 +75,6 @@ export default function DaftarPage() {
       return;
     }
 
-    /*
-     * Validasi konfirmasi password.
-     */
     if (password !== confirmPassword) {
       setErrorMessage(
         "Konfirmasi password tidak sama."
@@ -101,9 +87,6 @@ export default function DaftarPage() {
     try {
       /*
        * 1. Membuat akun di Supabase Auth.
-       *
-       * Logika lama yang sudah berhasil
-       * tidak diubah.
        */
       const {
         data: authData,
@@ -135,16 +118,17 @@ export default function DaftarPage() {
           .trim()
           .toLowerCase()
           .split("@")[0]
-          .replace(/[^a-z0-9_]/g, "")
+          .replace(
+            /[^a-z0-9_]/g,
+            ""
+          )
           .slice(0, 20) || "user";
 
       const username =
         `${emailUsername}_${userId.slice(0, 6)}`;
 
       /*
-       * 3. Menyimpan profil ke tabel profiles.
-       *
-       * Struktur insert tetap dipertahankan.
+       * 3. Menyimpan profil.
        */
       const { error: profileError } =
         await supabase
@@ -168,7 +152,7 @@ export default function DaftarPage() {
       }
 
       /*
-       * 4. Jika konfirmasi email diperlukan.
+       * 4. Konfirmasi email.
        */
       if (!authData.session) {
         setSuccessMessage(
@@ -185,8 +169,7 @@ export default function DaftarPage() {
       }
 
       /*
-       * 5. Jika session langsung tersedia,
-       * masuk ke chat.
+       * 5. Jika session langsung tersedia.
        */
       setSuccessMessage(
         "Akun berhasil dibuat. Mengarahkan ke Banda Chat..."
@@ -196,6 +179,7 @@ export default function DaftarPage() {
         router.replace("/chat");
         router.refresh();
       }, 1000);
+
     } catch (error) {
       console.error(
         "Register error:",
@@ -211,6 +195,7 @@ export default function DaftarPage() {
           "Terjadi kesalahan. Silakan coba lagi."
         );
       }
+
     } finally {
       setLoading(false);
     }
@@ -218,21 +203,31 @@ export default function DaftarPage() {
 
   return (
     <main className="min-h-screen bg-slate-100">
+
       {/* HEADER */}
       <header className="border-b border-blue-700 bg-blue-600 shadow-sm">
+
         <div className="mx-auto flex min-h-[68px] w-full max-w-5xl items-center justify-center px-4">
+
           <Link
             href="/login"
             className="flex items-center gap-3"
           >
-            {/* LOGO BALON CHAT */}
-            <div className="relative flex h-11 w-11 items-center justify-center rounded-full bg-green-500 text-xl font-bold text-white shadow-md">
-              B
 
-              <span className="absolute bottom-0 left-1 h-4 w-4 -translate-x-1/2 rotate-45 bg-green-500" />
+            {/* LOGO HEADER */}
+            <div
+              className="relative flex h-11 w-11 items-center justify-center rounded-[14px] bg-green-500 text-xl font-extrabold text-white shadow-md"
+              aria-label="Logo Banda Chat"
+            >
+              <span className="relative z-10 leading-none">
+                B
+              </span>
+
+              <span className="absolute -bottom-1 left-2 h-3.5 w-3.5 rotate-45 rounded-[3px] bg-green-500" />
             </div>
 
             <div>
+
               <h1 className="text-lg font-bold text-white">
                 Banda Chat
               </h1>
@@ -240,14 +235,19 @@ export default function DaftarPage() {
               <p className="text-xs text-blue-100">
                 Buat akun baru
               </p>
+
             </div>
+
           </Link>
+
         </div>
       </header>
 
       {/* HALAMAN DAFTAR */}
       <section className="px-4 py-8">
+
         <div className="mx-auto w-full max-w-md">
+
           {/* KEMBALI LOGIN */}
           <Link
             href="/login"
@@ -257,13 +257,20 @@ export default function DaftarPage() {
           </Link>
 
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-200/70">
+
             {/* BAGIAN ATAS */}
             <div className="border-b border-slate-100 px-6 pb-6 pt-8 text-center sm:px-8">
-              {/* LOGO */}
-              <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-500 text-3xl font-bold text-white shadow-lg shadow-green-500/20">
-                B
 
-                <span className="absolute bottom-0 left-2 h-5 w-5 -translate-x-1/2 rotate-45 bg-green-500" />
+              {/* LOGO BESAR */}
+              <div
+                className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-[24px] bg-green-500 text-4xl font-extrabold text-white shadow-lg shadow-green-500/20"
+                aria-label="Logo Banda Chat"
+              >
+                <span className="relative z-10 leading-none">
+                  B
+                </span>
+
+                <span className="absolute -bottom-1.5 left-3.5 h-5 w-5 rotate-45 rounded-[4px] bg-green-500" />
               </div>
 
               <h2 className="mt-6 text-2xl font-bold text-slate-900">
@@ -274,14 +281,17 @@ export default function DaftarPage() {
                 Daftar untuk mulai menggunakan
                 Banda Chat.
               </p>
+
             </div>
 
             {/* FORM */}
             <div className="p-6 sm:p-8">
+
               <form
                 onSubmit={handleRegister}
                 className="space-y-5"
               >
+
                 {/* NAMA LENGKAP */}
                 <div>
                   <label
@@ -431,10 +441,12 @@ export default function DaftarPage() {
                     ? "Membuat Akun..."
                     : "Buat Akun"}
                 </button>
+
               </form>
 
               {/* LOGIN */}
               <div className="mt-7 border-t border-slate-100 pt-6 text-center">
+
                 <p className="text-sm text-slate-500">
                   Sudah memiliki akun?
                 </p>
@@ -445,7 +457,9 @@ export default function DaftarPage() {
                 >
                   Masuk sekarang
                 </Link>
+
               </div>
+
             </div>
           </div>
 
@@ -454,6 +468,7 @@ export default function DaftarPage() {
             fitur Banda Chat dan menyimpan informasi akun
             Anda.
           </p>
+
         </div>
       </section>
     </main>
