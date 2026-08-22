@@ -46,8 +46,6 @@ type PresenceData = {
   online_at?: string;
 };
 
-const CHAT_SPLASH_KEY = "banda-chat-splash-shown";
-
 export default function ChatPage() {
   const router = useRouter();
 
@@ -134,53 +132,6 @@ export default function ChatPage() {
   const loadingChatRef =
     useRef(false);
 
-  /*
-   * ============================================================
-   * SPLASH / LOADING
-   * ============================================================
-   *
-   * Loading hanya ditampilkan satu kali dalam satu tab/browser
-   * session.
-   *
-   * Setelah splash pernah ditampilkan, halaman chat tidak akan
-   * menampilkan splash lagi ketika login -> /chat atau refresh.
-   */
-  useEffect(() => {
-    let shouldShowSplash = false;
-
-    try {
-      const splashShown =
-        sessionStorage.getItem(
-          CHAT_SPLASH_KEY
-        );
-
-      if (!splashShown) {
-        shouldShowSplash = true;
-
-        sessionStorage.setItem(
-          CHAT_SPLASH_KEY,
-          "1"
-        );
-      }
-    } catch (error) {
-      console.error(
-        "Session storage error:",
-        error
-      );
-
-      /*
-       * Jika sessionStorage tidak tersedia,
-       * tetap jalankan aplikasi tanpa memaksa
-       * loading berulang.
-       */
-      shouldShowSplash = false;
-    }
-
-    if (!shouldShowSplash) {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     selectedConversationIdRef.current =
       selectedConversation?.id || null;
@@ -207,37 +158,15 @@ export default function ChatPage() {
           return;
         }
 
-        /*
-         * JANGAN memanggil loadChat() lagi ketika SIGNED_IN.
-         *
-         * Ini yang mencegah loading logo muncul kembali
-         * setelah login berhasil.
-         *
-         * loadChat() sudah dijalankan ketika halaman /chat
-         * pertama kali mounted.
-         */
-
         if (
           event === "SIGNED_IN" ||
           event === "INITIAL_SESSION" ||
           event === "TOKEN_REFRESHED"
         ) {
-          if (!session?.user) {
-            return;
-          }
-
-          /*
-           * Jika data chat belum dimuat karena alasan tertentu,
-           * loadChat tetap boleh dijalankan.
-           *
-           * Namun loading tidak akan dinyalakan kembali
-           * jika sudah selesai.
-           */
-          if (
-            !loadingChatRef.current &&
-            !currentUserId
-          ) {
-            void loadChat();
+          if (session?.user) {
+            if (!loadingChatRef.current) {
+              void loadChat();
+            }
           }
         }
 
@@ -246,9 +175,6 @@ export default function ChatPage() {
           setProfile(null);
           setContactInfo({});
           setUsers([]);
-          setSelectedUser(null);
-          setSelectedConversation(null);
-          setMessages([]);
 
           router.replace("/login");
         }
@@ -259,7 +185,7 @@ export default function ChatPage() {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [router, currentUserId]);
+  }, [router]);
 
   async function loadChat() {
     if (loadingChatRef.current) {
@@ -269,6 +195,7 @@ export default function ChatPage() {
     loadingChatRef.current = true;
 
     try {
+      setLoading(true);
       setErrorMessage("");
 
       const {
@@ -277,9 +204,7 @@ export default function ChatPage() {
       } = await supabase.auth.getSession();
 
       if (sessionError) {
-        throw new Error(
-          sessionError.message
-        );
+        throw new Error(sessionError.message);
       }
 
       if (!session?.user) {
@@ -287,8 +212,7 @@ export default function ChatPage() {
         return;
       }
 
-      const authUserId =
-        session.user.id;
+      const authUserId = session.user.id;
 
       setCurrentUserId(authUserId);
 
@@ -337,13 +261,7 @@ export default function ChatPage() {
           : "Gagal membuka Banda Chat."
       );
     } finally {
-      /*
-       * Loading dimatikan setelah data utama selesai.
-       *
-       * Tidak ada lagi setLoading(true) ketika login.
-       */
       setLoading(false);
-
       loadingChatRef.current = false;
     }
   }
@@ -1786,13 +1704,13 @@ export default function ChatPage() {
 
   /* ============================================================
      LOADING
+     LOGO LOADING SENGAJA TIDAK DIUBAH
      ============================================================ */
 
   if (loading) {
     return (
       <main className="flex min-h-[100dvh] h-[100dvh] items-center justify-center overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100">
         <div className="text-center">
-          {/* LOGO BANDA CHAT - TETAP SAMA */}
           <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[38%] bg-green-500 text-2xl font-bold text-white shadow-lg shadow-green-500/20">
             B
 
@@ -1811,6 +1729,7 @@ export default function ChatPage() {
 
   return (
     <main className="flex min-h-[100dvh] h-[100dvh] flex-col overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100 text-slate-900">
+
       {/* ========================================================
           HEADER
           ======================================================== */}
@@ -2088,12 +2007,49 @@ export default function ChatPage() {
               <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
                 <div className="max-w-md px-6 text-center">
 
-                  {/* LOGO BANDA CHAT - TETAP SAMA */}
+                  {/* =================================================
+                      LOGO BANDA CHAT
+                      BALON TEKS + EKOR LANCIP + HURUF B
+                      ================================================= */}
 
-                  <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-[38%] bg-green-500 text-3xl font-bold text-white shadow-xl shadow-green-500/20">
-                    B
+                  <div className="relative mx-auto h-20 w-20">
+                    <svg
+                      viewBox="0 0 80 80"
+                      className="h-20 w-20 drop-shadow-xl"
+                      aria-label="Logo Banda Chat"
+                      role="img"
+                    >
+                      <path
+                        d="
+                          M20 8
+                          H60
+                          C70 8 76 14 76 24
+                          V48
+                          C76 58 70 64 60 64
+                          H37
+                          L23 76
+                          L26 64
+                          H20
+                          C10 64 4 58 4 48
+                          V24
+                          C4 14 10 8 20 8
+                          Z
+                        "
+                        fill="#00C853"
+                      />
 
-                    <span className="absolute bottom-0 left-1 h-5 w-5 -translate-x-1/2 rotate-45 bg-green-500" />
+                      <text
+                        x="40"
+                        y="47"
+                        textAnchor="middle"
+                        fontSize="32"
+                        fontWeight="700"
+                        fontFamily="Arial, sans-serif"
+                        fill="white"
+                      >
+                        B
+                      </text>
+                    </svg>
                   </div>
 
                   <h2 className="mt-6 text-2xl font-bold text-slate-800">
