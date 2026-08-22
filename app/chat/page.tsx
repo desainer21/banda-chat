@@ -1710,10 +1710,11 @@ export default function ChatPage() {
     return (
       <main className="flex min-h-[100dvh] h-[100dvh] items-center justify-center overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100">
         <div className="text-center">
-          <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-green-500 text-2xl font-bold text-white shadow-lg shadow-green-500/20">
+          {/* LOGO BANDA CHAT - SAMA DENGAN LOGO BARU */}
+          <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[38%] bg-green-500 text-2xl font-bold text-white shadow-lg shadow-green-500/20">
             B
 
-            <span className="absolute bottom-0 left-2 h-5 w-5 -translate-x-1/2 rotate-45 bg-green-500" />
+            <span className="absolute bottom-0 left-1 h-5 w-5 -translate-x-1/2 rotate-45 bg-green-500" />
           </div>
 
           <div className="mx-auto mb-4 h-9 w-9 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
@@ -2003,10 +2004,16 @@ export default function ChatPage() {
             {!selectedConversation ? (
               <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
                 <div className="max-w-md px-6 text-center">
-                  <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-500 text-3xl font-bold text-white shadow-xl shadow-green-500/20">
+
+                  {/* =================================================
+                      LOGO BANDA CHAT BARU
+                      SAMA DENGAN LOGO LOGIN / DAFTAR
+                      ================================================= */}
+
+                  <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-[38%] bg-green-500 text-3xl font-bold text-white shadow-xl shadow-green-500/20">
                     B
 
-                    <span className="absolute bottom-0 left-2 h-5 w-5 -translate-x-1/2 rotate-45 bg-green-500" />
+                    <span className="absolute bottom-0 left-1 h-5 w-5 -translate-x-1/2 rotate-45 bg-green-500" />
                   </div>
 
                   <h2 className="mt-6 text-2xl font-bold text-slate-800">
