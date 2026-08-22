@@ -211,32 +211,16 @@ export default function DaftarPage() {
 
           <Link
             href="/login"
-            className="flex items-center gap-3"
+            className="text-center"
           >
 
-            {/* LOGO HEADER */}
-            <div
-              className="relative flex h-11 w-11 items-center justify-center rounded-[14px] bg-green-500 text-xl font-extrabold text-white shadow-md"
-              aria-label="Logo Banda Chat"
-            >
-              <span className="relative z-10 leading-none">
-                B
-              </span>
+            <h1 className="text-lg font-bold text-white">
+              Banda Chat
+            </h1>
 
-              <span className="absolute -bottom-1 left-2 h-3.5 w-3.5 rotate-45 rounded-[3px] bg-green-500" />
-            </div>
-
-            <div>
-
-              <h1 className="text-lg font-bold text-white">
-                Banda Chat
-              </h1>
-
-              <p className="text-xs text-blue-100">
-                Buat akun baru
-              </p>
-
-            </div>
+            <p className="text-xs text-blue-100">
+              Buat akun baru
+            </p>
 
           </Link>
 
@@ -261,19 +245,7 @@ export default function DaftarPage() {
             {/* BAGIAN ATAS */}
             <div className="border-b border-slate-100 px-6 pb-6 pt-8 text-center sm:px-8">
 
-              {/* LOGO BESAR */}
-              <div
-                className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-[24px] bg-green-500 text-4xl font-extrabold text-white shadow-lg shadow-green-500/20"
-                aria-label="Logo Banda Chat"
-              >
-                <span className="relative z-10 leading-none">
-                  B
-                </span>
-
-                <span className="absolute -bottom-1.5 left-3.5 h-5 w-5 rotate-45 rounded-[4px] bg-green-500" />
-              </div>
-
-              <h2 className="mt-6 text-2xl font-bold text-slate-900">
+              <h2 className="text-2xl font-bold text-slate-900">
                 Buat Akun Baru
               </h2>
 
