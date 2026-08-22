@@ -9,6 +9,7 @@ import {
 import { useRouter } from "next/navigation";
 
 import { supabase } from "@/lib/supabase";
+import BandaLogo from "@/components/BandaLogo";
 
 type Profile = {
   id: string;
@@ -1676,8 +1677,7 @@ export default function ChatPage() {
 
     const {
       error,
-    } =
-      await supabase.auth.signOut();
+    } = await supabase.auth.signOut();
 
     if (error) {
       setErrorMessage(
@@ -1704,18 +1704,18 @@ export default function ChatPage() {
 
   /* ============================================================
      LOADING
-     LOGO LOADING SENGAJA TIDAK DIUBAH
      ============================================================ */
 
   if (loading) {
     return (
       <main className="flex min-h-[100dvh] h-[100dvh] items-center justify-center overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100">
         <div className="text-center">
-          <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[38%] bg-green-500 text-2xl font-bold text-white shadow-lg shadow-green-500/20">
-            B
 
-            <span className="absolute bottom-0 left-1 h-5 w-5 -translate-x-1/2 rotate-45 bg-green-500" />
-          </div>
+          {/* LOGO BARU - SATU KOMPONEN */}
+          <BandaLogo
+            size={64}
+            className="mx-auto mb-5"
+          />
 
           <div className="mx-auto mb-4 h-9 w-9 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
 
@@ -2007,50 +2007,11 @@ export default function ChatPage() {
               <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
                 <div className="max-w-md px-6 text-center">
 
-                  {/* =================================================
-                      LOGO BANDA CHAT
-                      BALON TEKS + EKOR LANCIP + HURUF B
-                      ================================================= */}
-
-                  <div className="relative mx-auto h-20 w-20">
-                    <svg
-                      viewBox="0 0 80 80"
-                      className="h-20 w-20 drop-shadow-xl"
-                      aria-label="Logo Banda Chat"
-                      role="img"
-                    >
-                      <path
-                        d="
-                          M20 8
-                          H60
-                          C70 8 76 14 76 24
-                          V48
-                          C76 58 70 64 60 64
-                          H37
-                          L23 76
-                          L26 64
-                          H20
-                          C10 64 4 58 4 48
-                          V24
-                          C4 14 10 8 20 8
-                          Z
-                        "
-                        fill="#00C853"
-                      />
-
-                      <text
-                        x="40"
-                        y="47"
-                        textAnchor="middle"
-                        fontSize="32"
-                        fontWeight="700"
-                        fontFamily="Arial, sans-serif"
-                        fill="white"
-                      >
-                        B
-                      </text>
-                    </svg>
-                  </div>
+                  {/* LOGO BANDA CHAT */}
+                  <BandaLogo
+                    size={80}
+                    className="mx-auto"
+                  />
 
                   <h2 className="mt-6 text-2xl font-bold text-slate-800">
                     Pilih kontak untuk mulai

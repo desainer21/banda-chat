@@ -1,47 +1,49 @@
 "use client";
 
 import { useEffect } from "react";
-
 import { useRouter } from "next/navigation";
+
+import { supabase } from "@/lib/supabase";
+import BandaLogo from "@/components/BandaLogo";
 
 export default function HomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    /*
-     * Halaman pertama aplikasi langsung
-     * membuka halaman login.
-     *
-     * Dengan demikian pengguna yang membuka:
-     * http://localhost:3000/
-     *
-     * langsung melihat halaman login Banda Chat.
-     */
-    router.replace("/login");
+    let active = true;
+
+    async function checkSession() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!active) {
+        return;
+      }
+
+      if (session?.user) {
+        router.replace("/chat");
+      } else {
+        router.replace("/login");
+      }
+    }
+
+    void checkSession();
+
+    return () => {
+      active = false;
+    };
   }, [router]);
 
-  /*
-   * Tampilan sementara selama redirect.
-   * Tidak ada halaman beranda lama lagi.
-   */
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
-      <div className="text-center">
-        {/* LOGO BALON CHAT */}
-        <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-500 text-3xl font-bold text-white shadow-lg shadow-green-500/20">
-          B
+    <main className="flex min-h-[100dvh] items-center justify-center bg-gradient-to-br from-blue-50 via-white to-sky-100">
+      <div className="flex flex-col items-center text-center">
+        <BandaLogo size={90} />
 
-          <span className="absolute bottom-0 left-2 h-5 w-5 -translate-x-1/2 rotate-45 bg-green-500" />
-        </div>
+        <div className="mt-6 h-8 w-8 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
 
-        <h1 className="mt-5 text-xl font-bold text-slate-900">
-          Banda Chat
-        </h1>
-
-        <div className="mx-auto mt-5 h-9 w-9 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
-
-        <p className="mt-4 text-sm text-slate-500">
-          Membuka halaman login...
+        <p className="mt-4 text-sm font-medium text-slate-500">
+          Membuka Banda Chat...
         </p>
       </div>
     </main>
