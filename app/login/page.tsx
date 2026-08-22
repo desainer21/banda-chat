@@ -131,12 +131,23 @@ export default function LoginPage() {
       <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
         <div className="text-center">
 
+          {/* LOGO LOADING - TETAP */}
+          <div
+            className="relative mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[20px] bg-green-500 text-3xl font-extrabold text-white shadow-lg shadow-green-500/20"
+            aria-label="Logo Banda Chat"
+          >
+            <span className="relative z-10 leading-none">
+              B
+            </span>
+
+            <span className="absolute -bottom-1.5 left-2.5 h-4 w-4 rotate-45 rounded-[4px] bg-green-500" />
+          </div>
+
           <div className="mx-auto h-9 w-9 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
 
           <p className="mt-4 text-sm text-slate-500">
             Memeriksa sesi...
           </p>
-
         </div>
       </main>
     );
@@ -145,7 +156,7 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-slate-100">
 
-      {/* HEADER */}
+      {/* HEADER TANPA LOGO */}
       <header className="border-b border-blue-700 bg-blue-600 shadow-sm">
         <div className="mx-auto flex min-h-[68px] w-full max-w-5xl items-center justify-center px-4">
 
@@ -172,7 +183,19 @@ export default function LoginPage() {
             {/* BAGIAN ATAS */}
             <div className="border-b border-slate-100 px-6 pb-6 pt-8 text-center sm:px-8">
 
-              <h2 className="text-2xl font-bold text-slate-900">
+              {/* LOGO UTAMA - TETAP 1 LOGO */}
+              <div
+                className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-[24px] bg-green-500 text-4xl font-extrabold text-white shadow-lg shadow-green-500/20"
+                aria-label="Logo Banda Chat"
+              >
+                <span className="relative z-10 leading-none">
+                  B
+                </span>
+
+                <span className="absolute -bottom-1.5 left-3.5 h-5 w-5 rotate-45 rounded-[4px] bg-green-500" />
+              </div>
+
+              <h2 className="mt-6 text-2xl font-bold text-slate-900">
                 Selamat Datang
               </h2>
 
