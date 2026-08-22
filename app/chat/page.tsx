@@ -129,10 +129,6 @@ export default function ChatPage() {
   const selectedConversationIdRef =
     useRef<string | null>(null);
 
-  /*
-   * Mencegah loadChat dijalankan dua kali
-   * bersamaan ketika auth state berubah.
-   */
   const loadingChatRef =
     useRef(false);
 
@@ -141,11 +137,10 @@ export default function ChatPage() {
       selectedConversation?.id || null;
   }, [selectedConversation]);
 
-  /*
-   * ============================================================
-   * INITIAL AUTH + AUTH STATE
-   * ============================================================
-   */
+  /* ============================================================
+     INITIAL AUTH + AUTH STATE
+     ============================================================ */
+
   useEffect(() => {
     let mounted = true;
 
@@ -175,9 +170,7 @@ export default function ChatPage() {
           }
         }
 
-        if (
-          event === "SIGNED_OUT"
-        ) {
+        if (event === "SIGNED_OUT") {
           setCurrentUserId("");
           setProfile(null);
           setContactInfo({});
@@ -211,9 +204,7 @@ export default function ChatPage() {
       } = await supabase.auth.getSession();
 
       if (sessionError) {
-        throw new Error(
-          sessionError.message
-        );
+        throw new Error(sessionError.message);
       }
 
       if (!session?.user) {
@@ -221,16 +212,10 @@ export default function ChatPage() {
         return;
       }
 
-      const authUserId =
-        session.user.id;
+      const authUserId = session.user.id;
 
-      setCurrentUserId(
-        authUserId
-      );
+      setCurrentUserId(authUserId);
 
-      /*
-       * PROFILE
-       */
       const {
         data: myProfile,
         error: profileError,
@@ -239,10 +224,7 @@ export default function ChatPage() {
         .select(
           "id, full_name, username, avatar_url"
         )
-        .eq(
-          "id",
-          authUserId
-        )
+        .eq("id", authUserId)
         .maybeSingle();
 
       if (profileError) {
@@ -262,17 +244,11 @@ export default function ChatPage() {
           avatar_url: null,
         };
 
-      setProfile(
-        currentProfile
-      );
+      setProfile(currentProfile);
 
-      await loadUsers(
-        authUserId
-      );
+      await loadUsers(authUserId);
 
-      await loadContactInfo(
-        authUserId
-      );
+      await loadContactInfo(authUserId);
     } catch (error) {
       console.error(
         "Load chat error:",
@@ -304,26 +280,16 @@ export default function ChatPage() {
         .select(
           "id, full_name, username, avatar_url"
         )
-        .neq(
-          "id",
-          authUserId
-        )
-        .order(
-          "full_name",
-          {
-            ascending: true,
-          }
-        );
+        .neq("id", authUserId)
+        .order("full_name", {
+          ascending: true,
+        });
 
       if (error) {
-        throw new Error(
-          error.message
-        );
+        throw new Error(error.message);
       }
 
-      setUsers(
-        data || []
-      );
+      setUsers(data || []);
     } catch (error) {
       console.error(
         "Load users error:",
@@ -350,13 +316,8 @@ export default function ChatPage() {
         error: myMembershipError,
       } = await supabase
         .from("conversation_members")
-        .select(
-          "conversation_id"
-        )
-        .eq(
-          "user_id",
-          authUserId
-        );
+        .select("conversation_id")
+        .eq("user_id", authUserId);
 
       if (myMembershipError) {
         console.error(
@@ -376,8 +337,7 @@ export default function ChatPage() {
 
       const conversationIds =
         myMemberships.map(
-          (item) =>
-            item.conversation_id
+          (item) => item.conversation_id
         );
 
       const {
@@ -404,18 +364,16 @@ export default function ChatPage() {
       const conversationToUser:
         Record<string, string> = {};
 
-      allMembers?.forEach(
-        (member) => {
-          if (
-            member.user_id !==
-            authUserId
-          ) {
-            conversationToUser[
-              member.conversation_id
-            ] = member.user_id;
-          }
+      allMembers?.forEach((member) => {
+        if (
+          member.user_id !==
+          authUserId
+        ) {
+          conversationToUser[
+            member.conversation_id
+          ] = member.user_id;
         }
-      );
+      });
 
       const {
         data: allMessages,
@@ -429,12 +387,9 @@ export default function ChatPage() {
           "conversation_id",
           conversationIds
         )
-        .order(
-          "created_at",
-          {
-            ascending: false,
-          }
-        );
+        .order("created_at", {
+          ascending: false,
+        });
 
       if (messagesError) {
         console.error(
@@ -450,10 +405,7 @@ export default function ChatPage() {
       Object.entries(
         conversationToUser
       ).forEach(
-        ([
-          conversationId,
-          userId,
-        ]) => {
+        ([conversationId, userId]) => {
           const conversationMessages =
             (allMessages || []).filter(
               (message) =>
@@ -470,14 +422,11 @@ export default function ChatPage() {
             ).length;
 
           const lastMessage =
-            conversationMessages.length >
-            0
+            conversationMessages.length > 0
               ? conversationMessages[0]
               : null;
 
-          if (
-            !aggregatedInfo[userId]
-          ) {
+          if (!aggregatedInfo[userId]) {
             aggregatedInfo[userId] = {
               conversationId,
               lastMessage:
@@ -563,11 +512,10 @@ export default function ChatPage() {
     }, 1000);
   }
 
-  /*
-   * ============================================================
-   * PRESENCE
-   * ============================================================
-   */
+  /* ============================================================
+     PRESENCE
+     ============================================================ */
+
   useEffect(() => {
     if (!currentUserId) {
       return;
@@ -672,11 +620,10 @@ export default function ChatPage() {
     };
   }, [currentUserId]);
 
-  /*
-   * ============================================================
-   * TYPING
-   * ============================================================
-   */
+  /* ============================================================
+     TYPING
+     ============================================================ */
+
   useEffect(() => {
     if (!currentUserId) {
       return;
@@ -821,9 +768,7 @@ export default function ChatPage() {
       return;
     }
 
-    if (
-      value.trim()
-    ) {
+    if (value.trim()) {
       void channel.send({
         type: "broadcast",
         event: "typing",
@@ -881,6 +826,10 @@ export default function ChatPage() {
     }
   }
 
+  /* ============================================================
+     START CHAT
+     ============================================================ */
+
   async function startChat(
     user: Profile
   ) {
@@ -902,7 +851,8 @@ export default function ChatPage() {
     try {
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } =
+        await supabase.auth.getSession();
 
       if (!session?.user) {
         router.replace("/login");
@@ -990,6 +940,10 @@ export default function ChatPage() {
     }
   }
 
+  /* ============================================================
+     LOAD MESSAGES
+     ============================================================ */
+
   async function loadMessages(
     conversationId: string,
     authUserId: string
@@ -1009,12 +963,9 @@ export default function ChatPage() {
           "conversation_id",
           conversationId
         )
-        .order(
-          "created_at",
-          {
-            ascending: true,
-          }
-        );
+        .order("created_at", {
+          ascending: true,
+        });
 
       if (error) {
         throw new Error(
@@ -1132,11 +1083,10 @@ export default function ChatPage() {
     }
   }
 
-  /*
-   * ============================================================
-   * REALTIME SEMUA PESAN
-   * ============================================================
-   */
+  /* ============================================================
+     REALTIME SEMUA PESAN
+     ============================================================ */
+
   useEffect(() => {
     if (!currentUserId) {
       return;
@@ -1239,11 +1189,10 @@ export default function ChatPage() {
     };
   }, [currentUserId]);
 
-  /*
-   * ============================================================
-   * REALTIME CONVERSATION AKTIF
-   * ============================================================
-   */
+  /* ============================================================
+     REALTIME CONVERSATION AKTIF
+     ============================================================ */
+
   useEffect(() => {
     if (
       !selectedConversation ||
@@ -1414,21 +1363,23 @@ export default function ChatPage() {
     currentUserId,
   ]);
 
-  /*
-   * ============================================================
-   * SCROLL PESAN
-   * ============================================================
-   */
+  /* ============================================================
+     SCROLL PESAN
+     ============================================================ */
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView(
-      {
-        behavior: "smooth",
-      }
-    );
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    });
   }, [
     messages,
     typingUserIds,
   ]);
+
+  /* ============================================================
+     SEND MESSAGE
+     ============================================================ */
 
   async function sendMessage() {
     const content =
@@ -1751,16 +1702,14 @@ export default function ChatPage() {
     );
   }
 
-  /*
-   * ============================================================
-   * LOADING
-   * ============================================================
-   */
+  /* ============================================================
+     LOADING
+     ============================================================ */
+
   if (loading) {
     return (
-      <main className="flex h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100">
+      <main className="flex min-h-[100dvh] h-[100dvh] items-center justify-center overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100">
         <div className="text-center">
-          {/* LOGO BALON CHAT */}
           <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-green-500 text-2xl font-bold text-white shadow-lg shadow-green-500/20">
             B
 
@@ -1778,15 +1727,13 @@ export default function ChatPage() {
   }
 
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100 text-slate-900">
+    <main className="flex min-h-[100dvh] h-[100dvh] flex-col overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100 text-slate-900">
       {/* ========================================================
           HEADER
           ======================================================== */}
 
       <header className="z-20 shrink-0 border-b border-blue-100 bg-blue-600 shadow-sm">
         <div className="mx-auto flex h-[68px] w-full max-w-7xl items-center justify-between px-4">
-          {/* NAMA APLIKASI */}
-
           <div className="flex items-center">
             <div>
               <h1 className="text-lg font-bold text-white">
@@ -1798,8 +1745,6 @@ export default function ChatPage() {
               </p>
             </div>
           </div>
-
-          {/* USER */}
 
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="hidden text-right sm:block">
@@ -1850,7 +1795,7 @@ export default function ChatPage() {
           AREA APLIKASI
           ======================================================== */}
 
-      <div className="min-h-0 flex-1 p-0 md:p-3 lg:p-4">
+      <div className="min-h-0 flex-1 overflow-hidden p-0 md:p-3 lg:p-4">
         <div className="mx-auto flex h-full w-full max-w-7xl min-h-0 overflow-hidden bg-white shadow-none md:rounded-2xl md:shadow-xl md:shadow-blue-100/70">
           {/* ====================================================
               SIDEBAR KONTAK
@@ -1899,7 +1844,7 @@ export default function ChatPage() {
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 p-3">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50/60 p-3">
               <div className="mb-3 flex items-center justify-between px-1">
                 <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">
                   Kontak Banda Chat
@@ -2049,7 +1994,7 @@ export default function ChatPage() {
               ==================================================== */}
 
           <section
-            className={`h-full min-h-0 min-w-0 flex-1 flex-col bg-gradient-to-br from-sky-50 via-white to-blue-50 ${
+            className={`h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-gradient-to-br from-sky-50 via-white to-blue-50 ${
               mobileChatOpen
                 ? "flex"
                 : "hidden"
@@ -2058,8 +2003,6 @@ export default function ChatPage() {
             {!selectedConversation ? (
               <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
                 <div className="max-w-md px-6 text-center">
-                  {/* LOGO BALON CHAT */}
-
                   <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-500 text-3xl font-bold text-white shadow-xl shadow-green-500/20">
                     B
 
@@ -2174,7 +2117,7 @@ export default function ChatPage() {
                     PESAN
                     ================================================== */}
 
-                <div className="min-h-0 flex-1 overflow-y-auto bg-gradient-to-br from-sky-50/80 via-white to-blue-50/80 px-4 py-5 sm:px-5 sm:py-6">
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-gradient-to-br from-sky-50/80 via-white to-blue-50/80 px-4 py-5 pb-6 sm:px-5 sm:py-6">
                   {loadingMessages ? (
                     <div className="flex h-full items-center justify-center">
                       <div className="text-center">
@@ -2289,6 +2232,7 @@ export default function ChatPage() {
                         ref={
                           messagesEndRef
                         }
+                        className="h-px w-full"
                       />
                     </div>
                   )}
@@ -2298,7 +2242,7 @@ export default function ChatPage() {
                     INPUT PESAN
                     ================================================== */}
 
-                <div className="shrink-0 border-t border-slate-100 bg-white p-3 shadow-[0_-4px_15px_rgba(15,23,42,0.03)] sm:p-4">
+                <div className="shrink-0 border-t border-slate-100 bg-white px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_15px_rgba(15,23,42,0.03)] sm:p-4">
                   <div className="mx-auto flex max-w-3xl items-end gap-2 sm:gap-3">
                     <textarea
                       value={
@@ -2317,7 +2261,7 @@ export default function ChatPage() {
                       }
                       rows={1}
                       placeholder="Tulis pesan..."
-                      className="max-h-32 min-h-[48px] flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50 disabled:opacity-50"
+                      className="max-h-32 min-h-[48px] flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50 disabled:opacity-50"
                     />
 
                     <button
@@ -2353,7 +2297,7 @@ export default function ChatPage() {
           ======================================================== */}
 
       {errorMessage && (
-        <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-2xl border border-red-200 bg-white p-4 text-sm text-red-600 shadow-2xl">
+        <div className="fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-2xl border border-red-200 bg-white p-4 text-sm text-red-600 shadow-2xl">
           <div className="flex items-start gap-3">
             <span>⚠️</span>
 
