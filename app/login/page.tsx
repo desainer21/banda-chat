@@ -38,9 +38,11 @@ export default function LoginPage() {
         }
 
         /*
-         * Jika sudah login, langsung ke Chat.
+         * Jika pengguna sudah login,
+         * langsung masuk ke halaman chat.
          *
-         * Ini tidak memengaruhi halaman utama /.
+         * Logika yang sebelumnya sudah berhasil
+         * tetap dipertahankan.
          */
         if (session?.user) {
           router.replace("/chat");
@@ -80,7 +82,7 @@ export default function LoginPage() {
 
     if (!cleanEmail) {
       setErrorMessage(
-        "Email atau nomor telepon harus diisi."
+        "Email harus diisi."
       );
       return;
     }
@@ -96,8 +98,8 @@ export default function LoginPage() {
 
     try {
       /*
-       * Tetap menggunakan login email/password
-       * Supabase yang sudah digunakan aplikasi.
+       * Tetap menggunakan sistem login Supabase
+       * yang sebelumnya sudah berhasil.
        */
       const {
         data,
@@ -118,11 +120,8 @@ export default function LoginPage() {
       }
 
       /*
-       * Session sudah terbentuk.
-       *
-       * Langsung masuk ke Chat.
-       * app/chat/page.tsx kemudian mengambil
-       * unread dari database secara otomatis.
+       * Session berhasil dibuat.
+       * Langsung masuk ke chat.
        */
       router.replace("/chat");
       router.refresh();
@@ -135,7 +134,7 @@ export default function LoginPage() {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Login gagal."
+          : "Login gagal. Silakan coba lagi."
       );
     } finally {
       setLoading(false);
@@ -144,11 +143,15 @@ export default function LoginPage() {
 
   if (checkingSession) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
+      <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
         <div className="text-center">
-          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-white/10 border-t-blue-500" />
+          <div className="relative mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-500 text-2xl font-bold text-white shadow-lg">
+            B
+          </div>
 
-          <p className="text-sm text-slate-500">
+          <div className="mx-auto h-9 w-9 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
+
+          <p className="mt-4 text-sm text-slate-500">
             Memeriksa sesi...
           </p>
         </div>
@@ -157,148 +160,171 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-8 text-white">
-      <div className="w-full max-w-md">
-        {/* KEMBALI */}
-        <Link
-          href="/"
-          className="mb-6 inline-flex items-center text-sm text-slate-400 transition hover:text-white"
-        >
-          ← Kembali ke Beranda
-        </Link>
-
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl sm:p-8">
-          {/* LOGO */}
-          <div className="flex justify-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-3xl font-bold shadow-lg shadow-blue-600/20">
+    <main className="min-h-screen bg-slate-100">
+      {/* HEADER */}
+      <header className="border-b border-blue-700 bg-blue-600 shadow-sm">
+        <div className="mx-auto flex min-h-[68px] w-full max-w-5xl items-center justify-center px-4">
+          <div className="flex items-center gap-3">
+            {/* LOGO BALON CHAT */}
+            <div className="relative flex h-11 w-11 items-center justify-center rounded-full bg-green-500 text-xl font-bold text-white shadow-md">
               B
-            </div>
-          </div>
 
-          <div className="mt-6 text-center">
-            <h1 className="text-2xl font-bold">
-              Selamat Datang
-            </h1>
-
-            <p className="mt-2 text-sm text-slate-500">
-              Masuk ke akun Banda Chat Anda
-            </p>
-          </div>
-
-          {/* ERROR */}
-          {errorMessage && (
-            <div className="mt-6 rounded-2xl border border-red-500/20 bg-red-950/40 p-4 text-sm text-red-300">
-              <div className="flex items-start gap-3">
-                <span>⚠️</span>
-
-                <p className="flex-1">
-                  {errorMessage}
-                </p>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setErrorMessage("")
-                  }
-                  className="text-red-400 hover:text-white"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* FORM */}
-          <form
-            onSubmit={handleLogin}
-            className="mt-7 space-y-4"
-          >
-            <div>
-              <label
-                htmlFor="email"
-                className="mb-2 block text-sm font-semibold text-slate-300"
-              >
-                Email atau Nomor Telepon
-              </label>
-
-              <input
-                id="email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(event) =>
-                  setEmail(
-                    event.target.value
-                  )
-                }
-                placeholder="Masukkan email"
-                className="h-12 w-full rounded-xl border border-white/10 bg-slate-800 px-4 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-500"
-              />
+              <span className="absolute bottom-0 left-1 h-4 w-4 -translate-x-1/2 rotate-45 bg-green-500" />
             </div>
 
             <div>
-              <label
-                htmlFor="password"
-                className="mb-2 block text-sm font-semibold text-slate-300"
-              >
-                Password
-              </label>
+              <h1 className="text-lg font-bold text-white">
+                Banda Chat
+              </h1>
 
-              <input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) =>
-                  setPassword(
-                    event.target.value
-                  )
-                }
-                placeholder="Masukkan password"
-                className="h-12 w-full rounded-xl border border-white/10 bg-slate-800 px-4 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-500"
-              />
+              <p className="text-xs text-blue-100">
+                Chat modern dan realtime
+              </p>
             </div>
-
-            <button
-              type="submit"
-              disabled={
-                loading ||
-                !email.trim() ||
-                !password
-              }
-              className="flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading
-                ? "Memproses..."
-                : "Masuk"}
-            </button>
-          </form>
-
-          {/* DAFTAR */}
-          <div className="mt-7 text-center">
-            <p className="text-sm text-slate-500">
-              Belum memiliki akun?
-            </p>
-
-            <Link
-              href="/daftar"
-              className="mt-2 inline-block text-sm font-bold text-blue-400 transition hover:text-blue-300"
-            >
-              Daftar sekarang
-            </Link>
-          </div>
-
-          {/* BERANDA */}
-          <div className="mt-6 border-t border-white/10 pt-5 text-center">
-            <Link
-              href="/"
-              className="text-xs text-slate-500 transition hover:text-white"
-            >
-              ← Kembali ke Beranda
-            </Link>
           </div>
         </div>
-      </div>
+      </header>
+
+      {/* HALAMAN LOGIN */}
+      <section className="flex min-h-[calc(100vh-68px)] items-center justify-center px-4 py-8">
+        <div className="w-full max-w-md">
+          <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-200/70">
+            {/* BAGIAN ATAS */}
+            <div className="border-b border-slate-100 px-6 pb-6 pt-8 text-center sm:px-8">
+              {/* LOGO BESAR */}
+              <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-500 text-3xl font-bold text-white shadow-lg shadow-green-500/20">
+                B
+
+                <span className="absolute bottom-0 left-2 h-5 w-5 -translate-x-1/2 rotate-45 bg-green-500" />
+              </div>
+
+              <h2 className="mt-6 text-2xl font-bold text-slate-900">
+                Selamat Datang
+              </h2>
+
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                Masuk ke akun Banda Chat Anda untuk
+                mulai berkomunikasi dengan teman.
+              </p>
+            </div>
+
+            {/* ISI FORM */}
+            <div className="p-6 sm:p-8">
+              {/* ERROR */}
+              {errorMessage && (
+                <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  <div className="flex items-start gap-3">
+                    <span className="shrink-0">
+                      ⚠️
+                    </span>
+
+                    <p className="flex-1">
+                      {errorMessage}
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setErrorMessage("")
+                      }
+                      className="shrink-0 font-bold text-red-500 transition hover:text-red-700"
+                      aria-label="Tutup pesan error"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* FORM */}
+              <form
+                onSubmit={handleLogin}
+                className="space-y-5"
+              >
+                <div>
+                  <label
+                    htmlFor="email"
+                    className="mb-2 block text-sm font-semibold text-slate-700"
+                  >
+                    Email
+                  </label>
+
+                  <input
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(event) =>
+                      setEmail(
+                        event.target.value
+                      )
+                    }
+                    disabled={loading}
+                    placeholder="contoh@email.com"
+                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="password"
+                    className="mb-2 block text-sm font-semibold text-slate-700"
+                  >
+                    Password
+                  </label>
+
+                  <input
+                    id="password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(event) =>
+                      setPassword(
+                        event.target.value
+                      )
+                    }
+                    disabled={loading}
+                    placeholder="Masukkan password"
+                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={
+                    loading ||
+                    !email.trim() ||
+                    !password
+                  }
+                  className="flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-md shadow-blue-600/20 transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {loading
+                    ? "Memproses..."
+                    : "Masuk ke Banda Chat"}
+                </button>
+              </form>
+
+              {/* DAFTAR */}
+              <div className="mt-7 border-t border-slate-100 pt-6 text-center">
+                <p className="text-sm text-slate-500">
+                  Belum memiliki akun?
+                </p>
+
+                <Link
+                  href="/daftar"
+                  className="mt-2 inline-block text-sm font-bold text-blue-600 transition hover:text-blue-800 hover:underline"
+                >
+                  Daftar sekarang
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          <p className="mt-6 text-center text-xs text-slate-400">
+            Banda Chat • Cepat • Sederhana • Realtime
+          </p>
+        </div>
+      </section>
     </main>
   );
 }
