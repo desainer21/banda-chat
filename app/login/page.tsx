@@ -1,149 +1,245 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useState,
+} from "react";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+
 import { supabase } from "@/lib/supabase";
 
 export default function LoginPage() {
+  const router = useRouter();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const [checkingSession, setCheckingSession] =
+    useState(true);
 
-  async function handleLogin(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  const [errorMessage, setErrorMessage] =
+    useState("");
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function checkExistingSession() {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!mounted) {
+          return;
+        }
+
+        /*
+         * Jika sudah login, langsung ke Chat.
+         *
+         * Ini tidak memengaruhi halaman utama /.
+         */
+        if (session?.user) {
+          router.replace("/chat");
+          return;
+        }
+      } catch (error) {
+        console.error(
+          "Check login session error:",
+          error
+        );
+      } finally {
+        if (mounted) {
+          setCheckingSession(false);
+        }
+      }
+    }
+
+    void checkExistingSession();
+
+    return () => {
+      mounted = false;
+    };
+  }, [router]);
+
+  async function handleLogin(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    if (loading) {
+      return;
+    }
 
     setErrorMessage("");
-    setSuccessMessage("");
 
-    if (!email.trim()) {
-      setErrorMessage("Email wajib diisi.");
+    const cleanEmail = email.trim();
+
+    if (!cleanEmail) {
+      setErrorMessage(
+        "Email atau nomor telepon harus diisi."
+      );
       return;
     }
 
     if (!password) {
-      setErrorMessage("Password wajib diisi.");
+      setErrorMessage(
+        "Password harus diisi."
+      );
       return;
     }
 
     setLoading(true);
 
     try {
-      console.log("1. Memulai login...");
-
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+      /*
+       * Tetap menggunakan login email/password
+       * Supabase yang sudah digunakan aplikasi.
+       */
+      const {
+        data,
+        error,
+      } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
         password,
       });
 
-      console.log("2. Hasil login:", data, error);
-
       if (error) {
-        console.error("Login error:", error);
-
-        const message = error.message.toLowerCase();
-
-        if (message.includes("email not confirmed")) {
-          setErrorMessage(
-            "Email Anda belum dikonfirmasi. Silakan cek email Anda terlebih dahulu."
-          );
-        } else if (message.includes("invalid login credentials")) {
-          setErrorMessage("Email atau password salah.");
-        } else {
-          setErrorMessage(error.message);
-        }
-
-        setLoading(false);
-        return;
+        throw new Error(error.message);
       }
 
-      if (!data.user) {
-        setErrorMessage("Login gagal. Data pengguna tidak ditemukan.");
-        setLoading(false);
-        return;
+      if (!data.session?.user) {
+        throw new Error(
+          "Login berhasil tetapi sesi pengguna belum tersedia."
+        );
       }
 
-      console.log("3. Login berhasil:", data.user.id);
-
-      setSuccessMessage("Login berhasil! Membuka Banda Chat...");
-
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      console.log("4. Mengarahkan ke halaman chat...");
-
-      window.location.href = "/chat";
+      /*
+       * Session sudah terbentuk.
+       *
+       * Langsung masuk ke Chat.
+       * app/chat/page.tsx kemudian mengambil
+       * unread dari database secara otomatis.
+       */
+      router.replace("/chat");
+      router.refresh();
     } catch (error) {
-      console.error("Login exception:", error);
+      console.error(
+        "Login error:",
+        error
+      );
 
-      if (error instanceof Error) {
-        setErrorMessage(error.message);
-      } else {
-        setErrorMessage("Terjadi kesalahan saat login.");
-      }
-
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Login gagal."
+      );
+    } finally {
       setLoading(false);
     }
   }
 
-  return (
-    <main className="min-h-screen bg-white px-4 py-10">
-      <div className="mx-auto w-full max-w-md">
+  if (checkingSession) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-white/10 border-t-blue-500" />
 
-        {/* Kembali ke Beranda */}
+          <p className="text-sm text-slate-500">
+            Memeriksa sesi...
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-8 text-white">
+      <div className="w-full max-w-md">
+        {/* KEMBALI */}
         <Link
           href="/"
-          className="mb-8 inline-flex items-center text-sm font-medium text-gray-600 transition hover:text-blue-600"
+          className="mb-6 inline-flex items-center text-sm text-slate-400 transition hover:text-white"
         >
           ← Kembali ke Beranda
         </Link>
 
-        {/* Header */}
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-2xl font-bold text-white shadow-lg">
-            B
+        <div className="rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl sm:p-8">
+          {/* LOGO */}
+          <div className="flex justify-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-3xl font-bold shadow-lg shadow-blue-600/20">
+              B
+            </div>
           </div>
 
-          <h1 className="text-3xl font-bold text-gray-900">
-            Selamat Datang
-          </h1>
+          <div className="mt-6 text-center">
+            <h1 className="text-2xl font-bold">
+              Selamat Datang
+            </h1>
 
-          <p className="mt-2 text-gray-500">
-            Masuk ke akun Banda Chat Anda
-          </p>
-        </div>
+            <p className="mt-2 text-sm text-slate-500">
+              Masuk ke akun Banda Chat Anda
+            </p>
+          </div>
 
-        {/* Form Login */}
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
-          <form onSubmit={handleLogin} className="space-y-5">
+          {/* ERROR */}
+          {errorMessage && (
+            <div className="mt-6 rounded-2xl border border-red-500/20 bg-red-950/40 p-4 text-sm text-red-300">
+              <div className="flex items-start gap-3">
+                <span>⚠️</span>
 
-            {/* Email */}
+                <p className="flex-1">
+                  {errorMessage}
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setErrorMessage("")
+                  }
+                  className="text-red-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* FORM */}
+          <form
+            onSubmit={handleLogin}
+            className="mt-7 space-y-4"
+          >
             <div>
               <label
                 htmlFor="email"
-                className="mb-2 block text-sm font-semibold text-gray-700"
+                className="mb-2 block text-sm font-semibold text-slate-300"
               >
-                Email
+                Email atau Nomor Telepon
               </label>
 
               <input
                 id="email"
                 type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="contoh@email.com"
                 autoComplete="email"
-                disabled={loading}
-                className="w-full rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100"
+                value={email}
+                onChange={(event) =>
+                  setEmail(
+                    event.target.value
+                  )
+                }
+                placeholder="Masukkan email"
+                className="h-12 w-full rounded-xl border border-white/10 bg-slate-800 px-4 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-500"
               />
             </div>
 
-            {/* Password */}
             <div>
               <label
                 htmlFor="password"
-                className="mb-2 block text-sm font-semibold text-gray-700"
+                className="mb-2 block text-sm font-semibold text-slate-300"
               >
                 Password
               </label>
@@ -151,51 +247,55 @@ export default function LoginPage() {
               <input
                 id="password"
                 type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Masukkan password"
                 autoComplete="current-password"
-                disabled={loading}
-                className="w-full rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100"
+                value={password}
+                onChange={(event) =>
+                  setPassword(
+                    event.target.value
+                  )
+                }
+                placeholder="Masukkan password"
+                className="h-12 w-full rounded-xl border border-white/10 bg-slate-800 px-4 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-500"
               />
             </div>
 
-            {/* Error */}
-            {errorMessage && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-5 text-red-700">
-                {errorMessage}
-              </div>
-            )}
-
-            {/* Success */}
-            {successMessage && (
-              <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm leading-5 text-green-700">
-                {successMessage}
-              </div>
-            )}
-
-            {/* Tombol Masuk */}
             <button
               type="submit"
-              disabled={loading}
-              className="w-full rounded-xl bg-blue-600 px-4 py-3.5 font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-blue-400"
+              disabled={
+                loading ||
+                !email.trim() ||
+                !password
+              }
+              className="flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {loading ? "Memproses..." : "Masuk"}
+              {loading
+                ? "Memproses..."
+                : "Masuk"}
             </button>
-
           </form>
 
-          {/* Daftar */}
-          <div className="mt-6 border-t border-gray-100 pt-6 text-center">
-            <p className="text-sm text-gray-500">
-              Belum memiliki akun?{" "}
-              <Link
-                href="/daftar"
-                className="font-semibold text-blue-600 hover:text-blue-700 hover:underline"
-              >
-                Daftar sekarang
-              </Link>
+          {/* DAFTAR */}
+          <div className="mt-7 text-center">
+            <p className="text-sm text-slate-500">
+              Belum memiliki akun?
             </p>
+
+            <Link
+              href="/daftar"
+              className="mt-2 inline-block text-sm font-bold text-blue-400 transition hover:text-blue-300"
+            >
+              Daftar sekarang
+            </Link>
+          </div>
+
+          {/* BERANDA */}
+          <div className="mt-6 border-t border-white/10 pt-5 text-center">
+            <Link
+              href="/"
+              className="text-xs text-slate-500 transition hover:text-white"
+            >
+              ← Kembali ke Beranda
+            </Link>
           </div>
         </div>
       </div>
