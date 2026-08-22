@@ -114,6 +114,16 @@ export default function ChatPage() {
     useState("");
 
 
+  /*
+   * KHUSUS MOBILE
+   *
+   * false = tampil daftar kontak
+   * true  = tampil halaman chat
+   */
+  const [mobileChatOpen, setMobileChatOpen] =
+    useState(false);
+
+
   const messagesEndRef =
     useRef<HTMLDivElement | null>(null);
 
@@ -294,31 +304,13 @@ export default function ChatPage() {
    * LOAD CONTACT INFO
    * ============================================================
    *
-   * BAGIAN INI YANG DIPERBAIKI.
-   *
-   * Tujuannya:
+   * BAGIAN SISTEM KONTAK + UNREAD COUNT
+   * TETAP DIPERTAHANKAN.
    *
    * - Satu akun hanya tampil satu kali.
-   * - Kalau satu akun mempunyai lebih dari satu conversation,
-   *   semuanya digabung.
-   * - Unread dari semua conversation dihitung.
-   * - Last message diambil dari conversation yang mempunyai
-   *   pesan terbaru.
-   *
-   * Jadi misalnya:
-   *
-   * Akun B
-   *   conversation lama  -> 2 pesan belum dibaca
-   *   conversation baru  -> 1 pesan belum dibaca
-   *
-   * Hasil di beranda:
-   *
-   * Akun B                    3
-   *
-   * bukan:
-   *
-   * Akun B
-   * Akun B
+   * - Conversation lama dan baru digabung per akun.
+   * - Semua unread dihitung.
+   * - Pesan terbaru digunakan sebagai last message.
    *
    * ============================================================
    */
@@ -367,9 +359,6 @@ export default function ChatPage() {
         );
 
 
-      /*
-       * Ambil seluruh anggota conversation.
-       */
       const {
         data: allMembers,
         error: allMembersError,
@@ -394,9 +383,6 @@ export default function ChatPage() {
       }
 
 
-      /*
-       * conversation -> user lain
-       */
       const conversationToUser:
         Record<string, string> = {};
 
@@ -415,9 +401,6 @@ export default function ChatPage() {
       );
 
 
-      /*
-       * Ambil semua pesan dari seluruh conversation
-       */
       const {
         data: allMessages,
         error: messagesError,
@@ -448,22 +431,10 @@ export default function ChatPage() {
       }
 
 
-      /*
-       * ========================================================
-       * AGREGASI PER USER
-       * ========================================================
-       *
-       * Ini yang memastikan satu akun hanya mempunyai
-       * satu ContactInfo.
-       */
-
       const aggregatedInfo:
         Record<string, ContactInfo> = {};
 
 
-      /*
-       * Kita proses setiap conversation.
-       */
       Object.entries(
         conversationToUser
       ).forEach(
@@ -480,13 +451,6 @@ export default function ChatPage() {
             );
 
 
-          /*
-           * Hitung pesan belum dibaca.
-           *
-           * HANYA pesan dari lawan bicara.
-           *
-           * Pesan sendiri tidak dihitung.
-           */
           const unreadCount =
             conversationMessages.filter(
               (message) =>
@@ -496,29 +460,18 @@ export default function ChatPage() {
             ).length;
 
 
-          /*
-           * Karena allMessages sudah diurutkan
-           * descending berdasarkan created_at,
-           * pesan pertama adalah pesan terbaru.
-           */
           const lastMessage =
             conversationMessages.length > 0
               ? conversationMessages[0]
               : null;
 
 
-          /*
-           * Kalau user ini belum ada di aggregatedInfo,
-           * langsung buat.
-           */
           if (
             !aggregatedInfo[userId]
           ) {
             aggregatedInfo[userId] = {
               conversationId:
-                lastMessage
-                  ? conversationId
-                  : conversationId,
+                conversationId,
 
               lastMessage:
                 lastMessage?.content ||
@@ -535,16 +488,6 @@ export default function ChatPage() {
             return;
           }
 
-
-          /*
-           * Kalau user sudah ada karena mempunyai
-           * conversation lain:
-           *
-           * 1. Tambahkan unread.
-           * 2. Bandingkan pesan terakhir.
-           * 3. Simpan conversation yang mempunyai
-           *    aktivitas terbaru.
-           */
 
           aggregatedInfo[userId].unreadCount +=
             unreadCount;
@@ -655,15 +598,6 @@ export default function ChatPage() {
       }
 
 
-      /*
-       * RPC tetap digunakan seperti sebelumnya.
-       *
-       * Jika conversation sudah ada,
-       * RPC akan mengembalikan conversation tersebut.
-       *
-       * Jika belum ada,
-       * RPC membuat conversation baru.
-       */
       const {
         data: conversationId,
         error: rpcError,
@@ -721,16 +655,20 @@ export default function ChatPage() {
       setMessages([]);
 
 
-      /*
-       * Load pesan conversation.
-       *
-       * Setelah conversation benar-benar dibuka,
-       * unread akan ditandai terbaca.
-       */
       await loadMessages(
         conversation.id,
         authUserId
       );
+
+
+      /*
+       * PERBAIKAN MOBILE
+       *
+       * Setelah chat berhasil dibuka,
+       * HP pindah dari daftar kontak
+       * ke halaman percakapan.
+       */
+      setMobileChatOpen(true);
 
 
     } catch (error) {
@@ -794,10 +732,6 @@ export default function ChatPage() {
       );
 
 
-      /*
-       * HANYA setelah conversation dibuka,
-       * pesan lawan dianggap sudah dibaca.
-       */
       await markConversationRead(
         conversationId,
         authUserId
@@ -825,21 +759,6 @@ export default function ChatPage() {
   }
 
 
-  /*
-   * ============================================================
-   * MARK CONVERSATION READ
-   * ============================================================
-   *
-   * PERBAIKAN:
-   *
-   * Tidak lagi bergantung kepada state "messages".
-   *
-   * RPC langsung menandai pesan di database.
-   *
-   * Setelah itu contactInfo dimuat ulang sehingga badge
-   * langsung menjadi 0.
-   */
-
   async function markConversationRead(
     conversationId: string,
     authUserId: string
@@ -866,10 +785,6 @@ export default function ChatPage() {
       }
 
 
-      /*
-       * Update state messages secara langsung.
-       * Jadi tanda ✓✓ juga langsung berubah.
-       */
       setMessages(
         (previous) =>
           previous.map(
@@ -894,10 +809,6 @@ export default function ChatPage() {
       );
 
 
-      /*
-       * Setelah database berubah,
-       * hitung ulang unread count.
-       */
       await loadContactInfo(
         authUserId
       );
@@ -916,9 +827,6 @@ export default function ChatPage() {
    * ============================================================
    * REALTIME - SEMUA PESAN
    * ============================================================
-   *
-   * Ini digunakan untuk memperbarui daftar kontak dan badge
-   * tanpa perlu refresh browser.
    */
 
   useEffect(() => {
@@ -1038,11 +946,6 @@ export default function ChatPage() {
             );
 
 
-            /*
-             * Jika pesan datang dari lawan bicara
-             * sementara conversation sedang dibuka,
-             * langsung tandai terbaca.
-             */
             if (
               newMessage.sender_id !==
               currentUserId
@@ -1056,9 +959,6 @@ export default function ChatPage() {
               );
 
 
-              /*
-               * Update read_at di state.
-               */
               setMessages(
                 (previous) =>
                   previous.map(
@@ -1421,6 +1321,17 @@ export default function ChatPage() {
   }
 
 
+  /*
+   * Tombol kembali khusus HP.
+   *
+   * Conversation tetap tersimpan di state,
+   * hanya tampilan kembali ke daftar kontak.
+   */
+  function handleMobileBack() {
+    setMobileChatOpen(false);
+  }
+
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
@@ -1442,6 +1353,8 @@ export default function ChatPage() {
 
   return (
     <main className="flex min-h-screen flex-col bg-slate-950 text-white">
+
+      {/* HEADER UTAMA */}
 
       <header className="border-b border-white/10 bg-slate-900">
 
@@ -1519,14 +1432,28 @@ export default function ChatPage() {
       </header>
 
 
-      <div className="flex flex-1">
+      <div className="flex min-h-0 flex-1">
 
-        <div className="mx-auto flex w-full max-w-7xl">
+        <div className="mx-auto flex min-h-0 w-full max-w-7xl">
 
 
-          {/* SIDEBAR SATU DAFTAR KONTAK */}
+          {/* ================================================= */}
+          {/* SIDEBAR / DAFTAR KONTAK */}
+          {/* ================================================= */}
+          {/* DI HP:
+              tampil hanya jika mobileChatOpen = false
 
-          <aside className="w-full border-r border-white/10 bg-slate-900 md:w-80 md:shrink-0">
+              DI PC:
+              selalu tampil
+          */}
+
+          <aside
+            className={`min-h-0 w-full border-r border-white/10 bg-slate-900 md:flex md:w-80 md:shrink-0 md:flex-col ${
+              mobileChatOpen
+                ? "hidden"
+                : "flex flex-col"
+            }`}
+          >
 
             <div className="border-b border-white/10 p-4">
 
@@ -1550,7 +1477,7 @@ export default function ChatPage() {
             </div>
 
 
-            <div className="p-4">
+            <div className="flex-1 overflow-y-auto p-4">
 
               <div className="mb-3 flex items-center justify-between">
 
@@ -1678,7 +1605,7 @@ export default function ChatPage() {
                                           : info.unreadCount}
                                       </span>
 
-                                  )}
+                                    )}
 
                                 </div>
 
@@ -1714,9 +1641,27 @@ export default function ChatPage() {
           </aside>
 
 
+          {/* ================================================= */}
           {/* CHAT AREA */}
+          {/* ================================================= */}
+          {/* PERBAIKAN UTAMA:
+              sebelumnya:
+              hidden ... md:flex
 
-          <section className="hidden min-w-0 flex-1 flex-col md:flex">
+              sehingga HP tidak pernah bisa melihat chat.
+
+              sekarang:
+              jika mobileChatOpen = true -> flex di HP
+              PC tetap selalu flex
+          */}
+
+          <section
+            className={`min-h-0 min-w-0 flex-1 flex-col bg-slate-950 md:flex ${
+              mobileChatOpen
+                ? "flex"
+                : "hidden"
+            }`}
+          >
 
             {!selectedConversation ? (
 
@@ -1746,23 +1691,39 @@ export default function ChatPage() {
 
               <>
 
-                {/* CHAT HEADER */}
 
-                <div className="border-b border-white/10 bg-slate-900 px-5 py-4">
+                {/* ============================================= */}
+                {/* CHAT HEADER */}
+                {/* ============================================= */}
+
+                <div className="border-b border-white/10 bg-slate-900 px-4 py-3 sm:px-5 sm:py-4">
 
                   <div className="flex items-center gap-3">
+
+
+                    {/* TOMBOL KEMBALI KHUSUS HP */}
+
+                    <button
+                      type="button"
+                      onClick={handleMobileBack}
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg text-slate-300 transition hover:bg-white/10 hover:text-white md:hidden"
+                      aria-label="Kembali ke daftar kontak"
+                    >
+                      ←
+                    </button>
+
 
                     {selectedUser?.avatar_url ? (
 
                       <img
                         src={selectedUser.avatar_url}
                         alt={selectedUser.full_name}
-                        className="h-11 w-11 rounded-full object-cover"
+                        className="h-11 w-11 shrink-0 rounded-full object-cover"
                       />
 
                     ) : (
 
-                      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 font-bold">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-600 font-bold">
                         {getInitial(
                           selectedUser?.full_name ||
                             "B"
@@ -1772,17 +1733,19 @@ export default function ChatPage() {
                     )}
 
 
-                    <div>
+                    <div className="min-w-0">
 
-                      <h2 className="font-semibold">
+                      <h2 className="truncate font-semibold">
                         {selectedUser?.full_name}
                       </h2>
 
+
                       {selectedUser?.username && (
-                        <p className="text-xs text-slate-500">
+                        <p className="truncate text-xs text-slate-500">
                           @{selectedUser.username}
                         </p>
                       )}
+
 
                       <p className="mt-1 text-xs text-green-400">
                         ● Online
@@ -1795,9 +1758,11 @@ export default function ChatPage() {
                 </div>
 
 
+                {/* ============================================= */}
                 {/* MESSAGES */}
+                {/* ============================================= */}
 
-                <div className="flex-1 overflow-y-auto px-5 py-6">
+                <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5 sm:py-6">
 
                   {loadingMessages ? (
 
@@ -1861,7 +1826,7 @@ export default function ChatPage() {
                             >
 
                               <div
-                                className={`max-w-[75%] rounded-2xl px-4 py-3 ${
+                                className={`max-w-[85%] rounded-2xl px-4 py-3 sm:max-w-[75%] ${
                                   isMine
                                     ? "rounded-br-md bg-blue-600 text-white"
                                     : "rounded-bl-md bg-white/10 text-slate-200"
@@ -1930,11 +1895,13 @@ export default function ChatPage() {
                 </div>
 
 
-                {/* INPUT */}
+                {/* ============================================= */}
+                {/* INPUT PESAN */}
+                {/* ============================================= */}
 
-                <div className="border-t border-white/10 bg-slate-900 p-4">
+                <div className="border-t border-white/10 bg-slate-900 p-3 sm:p-4">
 
-                  <div className="mx-auto flex max-w-3xl items-end gap-3">
+                  <div className="mx-auto flex max-w-3xl items-end gap-2 sm:gap-3">
 
                     <textarea
                       value={messageText}
@@ -1974,7 +1941,7 @@ export default function ChatPage() {
                   </div>
 
 
-                  <p className="mx-auto mt-2 max-w-3xl text-[10px] text-slate-600">
+                  <p className="mx-auto mt-2 hidden max-w-3xl text-[10px] text-slate-600 sm:block">
                     Enter untuk mengirim · Shift +
                     Enter untuk baris baru
                   </p>
