@@ -24,60 +24,68 @@ export default function Home() {
   useEffect(() => {
     let mounted = true;
 
+    async function loadProfile(userId: string, userEmail?: string | null) {
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select(
+          "id, full_name, username, phone, avatar_url, bio"
+        )
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (!mounted) return;
+
+      if (profileError) {
+        console.error("Gagal mengambil profile:", profileError);
+
+        setProfile({
+          id: userId,
+          full_name:
+            userEmail?.split("@")[0] ||
+            "Pengguna",
+          username: null,
+          phone: null,
+          avatar_url: null,
+          bio: null,
+        });
+
+        return;
+      }
+
+      if (profileData) {
+        setProfile(profileData);
+      } else {
+        setProfile({
+          id: userId,
+          full_name:
+            userEmail?.split("@")[0] ||
+            "Pengguna",
+          username: null,
+          phone: null,
+          avatar_url: null,
+          bio: null,
+        });
+      }
+    }
+
     async function loadUser() {
       try {
-        /*
-         * Ambil session pengguna
-         */
         const {
           data: { session },
         } = await supabase.auth.getSession();
 
         if (!mounted) return;
 
-        /*
-         * Jika belum login
-         */
         if (!session?.user) {
           setProfile(null);
           setLoading(false);
           return;
         }
 
-        /*
-         * Jika sudah login, ambil profile
-         */
-        const { data: profileData, error: profileError } = await supabase
-          .from("profiles")
-          .select(
-            "id, full_name, username, phone, avatar_url, bio"
-          )
-          .eq("id", session.user.id)
-          .maybeSingle();
-
-        if (profileError) {
-          console.error("Gagal mengambil profile:", profileError);
-
-          /*
-           * Tetap tampilkan informasi dari Auth
-           * jika profile belum ditemukan.
-           */
-          if (mounted) {
-            setProfile({
-              id: session.user.id,
-              full_name:
-                session.user.user_metadata?.full_name ||
-                session.user.email?.split("@")[0] ||
-                "Pengguna",
-              username: null,
-              phone: null,
-              avatar_url: null,
-              bio: null,
-            });
-          }
-        } else if (mounted) {
-          setProfile(profileData);
-        }
+        await loadProfile(
+          session.user.id,
+          session.user.email
+        );
       } catch (error) {
         console.error("Gagal memuat pengguna:", error);
 
@@ -93,54 +101,36 @@ export default function Home() {
 
     loadUser();
 
-    /*
-     * Pantau perubahan status login/logout
-     */
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
 
-      if (event === "SIGNED_OUT" || !session?.user) {
+      if (
+        event === "SIGNED_OUT" ||
+        !session?.user
+      ) {
         setProfile(null);
         setLoading(false);
         return;
       }
 
       /*
-       * Jangan melakukan query Supabase langsung
-       * secara berantai di dalam callback auth.
-       * Ambil profile setelah status session berubah.
+       * Beri sedikit waktu agar perubahan session
+       * selesai sebelum mengambil profile.
        */
-      const { data: profileData, error } = await supabase
-        .from("profiles")
-        .select(
-          "id, full_name, username, phone, avatar_url, bio"
-        )
-        .eq("id", session.user.id)
-        .maybeSingle();
+      setTimeout(() => {
+        if (!mounted) return;
 
-      if (!mounted) return;
-
-      if (error) {
-        console.error("Gagal mengambil profile:", error);
-
-        setProfile({
-          id: session.user.id,
-          full_name:
-            session.user.user_metadata?.full_name ||
-            session.user.email?.split("@")[0] ||
-            "Pengguna",
-          username: null,
-          phone: null,
-          avatar_url: null,
-          bio: null,
+        loadProfile(
+          session.user.id,
+          session.user.email
+        ).finally(() => {
+          if (mounted) {
+            setLoading(false);
+          }
         });
-      } else {
-        setProfile(profileData);
-      }
-
-      setLoading(false);
+      }, 0);
     });
 
     return () => {
@@ -149,10 +139,9 @@ export default function Home() {
     };
   }, []);
 
-  /*
-   * Logout
-   */
   async function handleLogout() {
+    if (loggingOut) return;
+
     setLoggingOut(true);
 
     try {
@@ -160,7 +149,11 @@ export default function Home() {
 
       if (error) {
         console.error("Logout error:", error);
-        alert("Gagal keluar dari akun: " + error.message);
+        alert(
+          "Gagal keluar dari akun: " +
+            error.message
+        );
+
         setLoggingOut(false);
         return;
       }
@@ -170,55 +163,72 @@ export default function Home() {
       router.refresh();
     } catch (error) {
       console.error("Logout error:", error);
-      alert("Terjadi kesalahan saat keluar dari akun.");
+
+      alert(
+        "Terjadi kesalahan saat keluar dari akun."
+      );
     } finally {
       setLoggingOut(false);
     }
   }
 
-  /*
-   * Nama pengguna
-   */
   const displayName =
     profile?.full_name ||
     profile?.username ||
     "Pengguna";
 
+  const firstLetter =
+    displayName.charAt(0).toUpperCase();
+
   return (
     <main className="min-h-screen bg-slate-950 text-white">
-      {/* NAVBAR */}
-      <nav className="border-b border-white/10 bg-slate-950/90">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-xl font-bold shadow-lg shadow-blue-600/30">
+
+      {/* =====================================================
+          NAVBAR
+      ====================================================== */}
+      <nav className="border-b border-white/10 bg-slate-950/95 backdrop-blur">
+        <div className="mx-auto flex min-h-[72px] max-w-6xl items-center justify-between gap-3 px-4 sm:px-5">
+
+          {/* LOGO */}
+          <Link
+            href="/"
+            className="flex min-w-0 items-center gap-2 sm:gap-3"
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-lg font-bold shadow-lg shadow-blue-600/30 sm:h-11 sm:w-11 sm:rounded-2xl sm:text-xl">
               B
             </div>
 
-            <div>
-              <h1 className="text-xl font-bold tracking-tight">
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-bold tracking-tight sm:text-xl">
                 Banda Chat
               </h1>
 
-              <p className="text-xs text-slate-400">
+              <p className="hidden text-xs text-slate-400 sm:block">
                 Terhubung tanpa batas
               </p>
             </div>
           </Link>
 
-          {/* MENU */}
-          <div className="flex items-center gap-3">
+          {/* =================================================
+              MENU NAVBAR
+          ================================================== */}
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
+
             {loading ? (
-              /*
-               * Saat session sedang diperiksa
-               */
-              <div className="h-10 w-24 animate-pulse rounded-xl bg-white/10" />
-            ) : profile ? (
-              /*
-               * USER SUDAH LOGIN
-               */
               <>
-                <div className="hidden items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2 sm:flex">
+                <div className="h-9 w-16 animate-pulse rounded-lg bg-white/10 sm:h-10 sm:w-20 sm:rounded-xl" />
+
+                <div className="h-9 w-16 animate-pulse rounded-lg bg-white/10 sm:h-10 sm:w-20 sm:rounded-xl" />
+              </>
+            ) : profile ? (
+
+              /* ================================
+                 USER SUDAH LOGIN
+              ================================= */
+              <>
+                {/* PROFILE - PC */}
+                <div className="hidden items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2 md:flex">
+
                   {profile.avatar_url ? (
                     <img
                       src={profile.avatar_url}
@@ -227,7 +237,7 @@ export default function Home() {
                     />
                   ) : (
                     <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 font-bold">
-                      {displayName.charAt(0).toUpperCase()}
+                      {firstLetter}
                     </div>
                   )}
 
@@ -244,37 +254,62 @@ export default function Home() {
                   </div>
                 </div>
 
+                {/* BUKA CHAT */}
                 <Link
                   href="/chat"
-                  className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500"
+                  className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 sm:rounded-xl sm:px-4 sm:py-2 sm:text-sm"
                 >
-                  Buka Chat
+                  <span className="sm:hidden">
+                    Chat
+                  </span>
+
+                  <span className="hidden sm:inline">
+                    Buka Chat
+                  </span>
                 </Link>
 
+                {/* LOGOUT */}
                 <button
                   type="button"
                   onClick={handleLogout}
                   disabled={loggingOut}
-                  className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 sm:rounded-xl sm:px-4 sm:text-sm"
                 >
-                  {loggingOut ? "Keluar..." : "Keluar"}
+                  {loggingOut ? (
+                    "..."
+                  ) : (
+                    <>
+                      <span className="sm:hidden">
+                        Keluar
+                      </span>
+
+                      <span className="hidden sm:inline">
+                        Keluar
+                      </span>
+                    </>
+                  )}
                 </button>
               </>
             ) : (
-              /*
-               * USER BELUM LOGIN
-               */
+
+              /* ================================
+                 USER BELUM LOGIN
+              ================================= */
               <>
+                {/* TOMBOL MASUK
+                    SELALU TAMPIL DI HP & PC */}
                 <Link
                   href="/login"
-                  className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+                  className="whitespace-nowrap rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10 sm:rounded-xl sm:px-4 sm:py-2 sm:text-sm"
                 >
                   Masuk
                 </Link>
 
+                {/* TOMBOL DAFTAR
+                    SELALU TAMPIL DI HP & PC */}
                 <Link
                   href="/daftar"
-                  className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500"
+                  className="whitespace-nowrap rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 sm:rounded-xl sm:px-5 sm:py-2.5 sm:text-sm"
                 >
                   Daftar
                 </Link>
@@ -284,48 +319,65 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* HERO */}
+      {/* =====================================================
+          HERO
+      ====================================================== */}
       <section className="relative overflow-hidden">
-        <div className="absolute left-1/2 top-0 h-96 w-96 -translate-x-1/2 rounded-full bg-blue-600/20 blur-3xl" />
 
-        <div className="relative mx-auto grid min-h-[calc(100vh-76px)] max-w-6xl items-center gap-12 px-5 py-16 md:grid-cols-2">
-          {/* LEFT */}
+        {/* BACKGROUND GLOW */}
+        <div className="absolute left-1/2 top-0 h-72 w-72 -translate-x-1/2 rounded-full bg-blue-600/20 blur-3xl sm:h-96 sm:w-96" />
+
+        <div className="relative mx-auto grid min-h-[calc(100vh-72px)] max-w-6xl items-center gap-12 px-5 py-12 sm:px-5 sm:py-16 md:grid-cols-2">
+
+          {/* =================================================
+              LEFT
+          ================================================== */}
           <div>
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-400/20 bg-blue-500/10 px-4 py-2 text-sm text-blue-300">
+
+            {/* BADGE */}
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-2 text-xs text-blue-300 sm:px-4 sm:text-sm">
               <span className="h-2 w-2 animate-pulse rounded-full bg-blue-400" />
 
               Chat real-time untuk semua perangkat
             </div>
 
+            {/* WELCOME */}
             {profile && (
               <div className="mb-5 rounded-2xl border border-green-400/20 bg-green-500/10 px-4 py-3 text-sm text-green-300">
                 👋 Selamat datang kembali,{" "}
+
                 <span className="font-bold text-white">
                   {displayName}
                 </span>
               </div>
             )}
 
+            {/* TITLE */}
             <h2 className="max-w-2xl text-4xl font-bold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
               Berkomunikasi Lebih
+
               <span className="block text-blue-500">
-                {" "}
                 Mudah & Aman
               </span>
             </h2>
 
+            {/* DESCRIPTION */}
             <p className="mt-6 max-w-xl text-base leading-8 text-slate-400 sm:text-lg">
-              Kirim pesan, gambar, video, audio, file, pesan suara,
-              buat grup, berbagi postingan, dan tetap terhubung dengan
-              teman Anda melalui Banda Chat.
+              Kirim pesan, gambar, video, audio, file,
+              pesan suara, buat grup, berbagi postingan,
+              dan tetap terhubung dengan teman Anda
+              melalui Banda Chat.
             </p>
 
-            {/* BUTTON HERO */}
-            <div className="mt-8 flex flex-wrap gap-4">
+            {/* =================================================
+                HERO BUTTON
+            ================================================== */}
+            <div className="mt-8 flex flex-wrap gap-3 sm:gap-4">
+
               {profile ? (
                 <Link
                   href="/chat"
-                  className="rounded-xl bg-blue-600 px-7 py-3.5 font-semibold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-500"
+                  className="rounded-xl bg-blue-600 px-6 py-3.5 font-semibold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-500 sm:px-7"
                 >
                   Buka Banda Chat
                 </Link>
@@ -333,14 +385,14 @@ export default function Home() {
                 <>
                   <Link
                     href="/daftar"
-                    className="rounded-xl bg-blue-600 px-7 py-3.5 font-semibold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-500"
+                    className="rounded-xl bg-blue-600 px-6 py-3.5 font-semibold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-500 sm:px-7"
                   >
                     Mulai Sekarang
                   </Link>
 
                   <Link
                     href="/login"
-                    className="rounded-xl border border-white/15 bg-white/5 px-7 py-3.5 font-semibold text-white transition hover:bg-white/10"
+                    className="rounded-xl border border-white/15 bg-white/5 px-6 py-3.5 font-semibold text-white transition hover:bg-white/10 sm:px-7"
                   >
                     Saya Sudah Punya Akun
                   </Link>
@@ -348,47 +400,58 @@ export default function Home() {
               )}
             </div>
 
-            {/* FEATURES */}
-            <div className="mt-10 grid grid-cols-3 gap-3 text-center sm:max-w-md">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            {/* =================================================
+                FEATURES
+            ================================================== */}
+            <div className="mt-10 grid grid-cols-3 gap-2 text-center sm:max-w-md sm:gap-3">
+
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-3 sm:p-4">
                 <p className="text-xl font-bold text-blue-400">
                   💬
                 </p>
 
-                <p className="mt-2 text-xs text-slate-400">
+                <p className="mt-2 text-[11px] text-slate-400 sm:text-xs">
                   Pesan Real-time
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-3 sm:p-4">
                 <p className="text-xl font-bold text-blue-400">
                   📞
                 </p>
 
-                <p className="mt-2 text-xs text-slate-400">
+                <p className="mt-2 text-[11px] text-slate-400 sm:text-xs">
                   Voice & Video
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-3 sm:p-4">
                 <p className="text-xl font-bold text-blue-400">
                   👥
                 </p>
 
-                <p className="mt-2 text-xs text-slate-400">
+                <p className="mt-2 text-[11px] text-slate-400 sm:text-xs">
                   Grup & Komunitas
                 </p>
               </div>
+
             </div>
           </div>
 
-          {/* RIGHT - PREVIEW CHAT */}
+          {/* =================================================
+              RIGHT - PREVIEW CHAT
+          ================================================== */}
           <div className="mx-auto w-full max-w-md">
+
             <div className="rounded-[2rem] border border-white/10 bg-slate-900 p-3 shadow-2xl shadow-blue-950/50">
+
               <div className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-950">
+
                 {/* CHAT HEADER */}
                 <div className="flex items-center justify-between border-b border-white/10 bg-slate-900 px-5 py-4">
+
                   <div className="flex items-center gap-3">
+
                     <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 font-bold">
                       A
                     </div>
@@ -402,6 +465,7 @@ export default function Home() {
                         ● Online
                       </p>
                     </div>
+
                   </div>
 
                   <span className="text-xl text-slate-400">
@@ -411,6 +475,7 @@ export default function Home() {
 
                 {/* CHAT BODY */}
                 <div className="space-y-4 px-4 py-6">
+
                   <div className="max-w-[80%] rounded-2xl rounded-tl-sm bg-white/10 px-4 py-3 text-sm text-slate-200">
                     Halo! Selamat datang di Banda Chat 👋
                   </div>
@@ -420,24 +485,29 @@ export default function Home() {
                   </div>
 
                   <div className="max-w-[80%] rounded-2xl rounded-tl-sm bg-white/10 px-4 py-3 text-sm text-slate-200">
-                    Kirim pesan dari perangkat mana saja secara
-                    real-time.
+                    Kirim pesan dari perangkat mana saja
+                    secara real-time.
                   </div>
+
                 </div>
 
                 {/* INPUT PREVIEW */}
                 <div className="flex items-center gap-3 border-t border-white/10 bg-slate-900 p-4">
+
                   <div className="flex-1 rounded-full bg-slate-800 px-4 py-3 text-sm text-slate-500">
                     Tulis pesan...
                   </div>
 
-                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 text-lg">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-600 text-lg">
                     ➤
                   </div>
+
                 </div>
+
               </div>
             </div>
           </div>
+
         </div>
       </section>
     </main>
