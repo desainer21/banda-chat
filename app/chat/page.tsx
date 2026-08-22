@@ -53,83 +53,114 @@ export default function ChatPage() {
   const [profile, setProfile] =
     useState<Profile | null>(null);
 
-
   const [currentUserId, setCurrentUserId] =
     useState("");
-
 
   const [users, setUsers] =
     useState<Profile[]>([]);
 
-
   const [contactInfo, setContactInfo] =
     useState<Record<string, ContactInfo>>({});
 
+  const [selectedUser, setSelectedUser] =
+    useState<Profile | null>(null);
 
-  const [
-    selectedUser,
-    setSelectedUser,
-  ] = useState<Profile | null>(null);
-
-
-  const [
-    selectedConversation,
-    setSelectedConversation,
-  ] = useState<Conversation | null>(null);
-
+  const [selectedConversation, setSelectedConversation] =
+    useState<Conversation | null>(null);
 
   const [messages, setMessages] =
     useState<Message[]>([]);
 
-
   const [search, setSearch] =
     useState("");
-
 
   const [messageText, setMessageText] =
     useState("");
 
-
   const [loading, setLoading] =
     useState(true);
-
 
   const [loadingUsers, setLoadingUsers] =
     useState(false);
 
-
   const [loadingMessages, setLoadingMessages] =
     useState(false);
-
 
   const [startingChat, setStartingChat] =
     useState(false);
 
-
   const [sendingMessage, setSendingMessage] =
     useState(false);
-
 
   const [errorMessage, setErrorMessage] =
     useState("");
 
-
-  /*
-   * KHUSUS MOBILE
-   *
-   * false = tampil daftar kontak
-   * true  = tampil halaman chat
-   */
   const [mobileChatOpen, setMobileChatOpen] =
     useState(false);
+
+
+  /* ============================================================
+     PRESENCE
+     ============================================================ */
+
+  const [onlineUserIds, setOnlineUserIds] =
+    useState<Set<string>>(new Set());
+
+
+  /* ============================================================
+     TYPING
+     ============================================================ */
+
+  const [typingUserIds, setTypingUserIds] =
+    useState<Set<string>>(new Set());
 
 
   const messagesEndRef =
     useRef<HTMLDivElement | null>(null);
 
 
+  const presenceChannelRef =
+    useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+
+  const typingChannelRef =
+    useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+
+  const typingTimerRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
+
+
+  const sendTypingTimerRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
+
+
+  const selectedConversationIdRef =
+    useRef<string | null>(null);
+
+
+  useEffect(() => {
+    selectedConversationIdRef.current =
+      selectedConversation?.id || null;
+  }, [selectedConversation]);
+
+
+  /* ============================================================
+     LOAD AWAL
+     ============================================================ */
+
   useEffect(() => {
     loadChat();
+
+    return () => {
+      if (typingTimerRef.current) {
+        clearTimeout(typingTimerRef.current);
+      }
+
+      if (sendTypingTimerRef.current) {
+        clearTimeout(sendTypingTimerRef.current);
+      }
+    };
   }, []);
 
 
@@ -138,35 +169,23 @@ export default function ChatPage() {
       setLoading(true);
       setErrorMessage("");
 
-
       const {
-        data: {
-          session,
-        },
+        data: { session },
         error: sessionError,
       } = await supabase.auth.getSession();
 
-
       if (sessionError) {
-        throw new Error(
-          sessionError.message
-        );
+        throw new Error(sessionError.message);
       }
-
 
       if (!session?.user) {
         router.replace("/login");
         return;
       }
 
+      const authUserId = session.user.id;
 
-      const authUserId =
-        session.user.id;
-
-
-      setCurrentUserId(
-        authUserId
-      );
+      setCurrentUserId(authUserId);
 
 
       const {
@@ -177,10 +196,7 @@ export default function ChatPage() {
         .select(
           "id, full_name, username, avatar_url"
         )
-        .eq(
-          "id",
-          authUserId
-        )
+        .eq("id", authUserId)
         .maybeSingle();
 
 
@@ -196,28 +212,18 @@ export default function ChatPage() {
         myProfile || {
           id: authUserId,
           full_name:
-            session.user.email
-              ?.split("@")[0] ||
+            session.user.email?.split("@")[0] ||
             "Pengguna",
           username: null,
           avatar_url: null,
         };
 
 
-      setProfile(
-        currentProfile
-      );
+      setProfile(currentProfile);
 
 
-      await loadUsers(
-        authUserId
-      );
-
-
-      await loadContactInfo(
-        authUserId
-      );
-
+      await loadUsers(authUserId);
+      await loadContactInfo(authUserId);
 
     } catch (error) {
       console.error(
@@ -225,13 +231,11 @@ export default function ChatPage() {
         error
       );
 
-
       setErrorMessage(
         error instanceof Error
           ? error.message
           : "Gagal membuka Banda Chat."
       );
-
 
     } finally {
       setLoading(false);
@@ -239,11 +243,14 @@ export default function ChatPage() {
   }
 
 
+  /* ============================================================
+     LOAD USERS
+     ============================================================ */
+
   async function loadUsers(
     authUserId: string
   ) {
     setLoadingUsers(true);
-
 
     try {
       const {
@@ -254,29 +261,18 @@ export default function ChatPage() {
         .select(
           "id, full_name, username, avatar_url"
         )
-        .neq(
-          "id",
-          authUserId
-        )
-        .order(
-          "full_name",
-          {
-            ascending: true,
-          }
-        );
+        .neq("id", authUserId)
+        .order("full_name", {
+          ascending: true,
+        });
 
 
       if (error) {
-        throw new Error(
-          error.message
-        );
+        throw new Error(error.message);
       }
 
 
-      setUsers(
-        data || []
-      );
-
+      setUsers(data || []);
 
     } catch (error) {
       console.error(
@@ -284,14 +280,12 @@ export default function ChatPage() {
         error
       );
 
-
       setErrorMessage(
         error instanceof Error
           ? "Gagal memuat pengguna: " +
-              error.message
+            error.message
           : "Gagal memuat pengguna."
       );
-
 
     } finally {
       setLoadingUsers(false);
@@ -299,21 +293,15 @@ export default function ChatPage() {
   }
 
 
-  /*
-   * ============================================================
-   * LOAD CONTACT INFO
-   * ============================================================
-   *
-   * BAGIAN SISTEM KONTAK + UNREAD COUNT
-   * TETAP DIPERTAHANKAN.
-   *
-   * - Satu akun hanya tampil satu kali.
-   * - Conversation lama dan baru digabung per akun.
-   * - Semua unread dihitung.
-   * - Pesan terbaru digunakan sebagai last message.
-   *
-   * ============================================================
-   */
+  /* ============================================================
+     LOAD CONTACT INFO
+
+     Satu akun = satu kontak.
+
+     Semua conversation milik user dengan akun yang sama
+     digabung. Conversation yang mempunyai pesan paling baru
+     digunakan sebagai sumber last message.
+     ============================================================ */
 
   async function loadContactInfo(
     authUserId: string
@@ -324,13 +312,8 @@ export default function ChatPage() {
         error: myMembershipError,
       } = await supabase
         .from("conversation_members")
-        .select(
-          "conversation_id"
-        )
-        .eq(
-          "user_id",
-          authUserId
-        );
+        .select("conversation_id")
+        .eq("user_id", authUserId);
 
 
       if (myMembershipError) {
@@ -338,7 +321,6 @@ export default function ChatPage() {
           "Load memberships error:",
           myMembershipError
         );
-
         return;
       }
 
@@ -354,8 +336,7 @@ export default function ChatPage() {
 
       const conversationIds =
         myMemberships.map(
-          (item) =>
-            item.conversation_id
+          (item) => item.conversation_id
         );
 
 
@@ -378,7 +359,6 @@ export default function ChatPage() {
           "Load all members error:",
           allMembersError
         );
-
         return;
       }
 
@@ -387,18 +367,15 @@ export default function ChatPage() {
         Record<string, string> = {};
 
 
-      allMembers?.forEach(
-        (member) => {
-          if (
-            member.user_id !==
-            authUserId
-          ) {
-            conversationToUser[
-              member.conversation_id
-            ] = member.user_id;
-          }
+      allMembers?.forEach((member) => {
+        if (
+          member.user_id !== authUserId
+        ) {
+          conversationToUser[
+            member.conversation_id
+          ] = member.user_id;
         }
-      );
+      });
 
 
       const {
@@ -413,12 +390,9 @@ export default function ChatPage() {
           "conversation_id",
           conversationIds
         )
-        .order(
-          "created_at",
-          {
-            ascending: false,
-          }
-        );
+        .order("created_at", {
+          ascending: false,
+        });
 
 
       if (messagesError) {
@@ -426,7 +400,6 @@ export default function ChatPage() {
           "Load contact messages error:",
           messagesError
         );
-
         return;
       }
 
@@ -438,11 +411,7 @@ export default function ChatPage() {
       Object.entries(
         conversationToUser
       ).forEach(
-        ([
-          conversationId,
-          userId,
-        ]) => {
-
+        ([conversationId, userId]) => {
           const conversationMessages =
             (allMessages || []).filter(
               (message) =>
@@ -466,23 +435,14 @@ export default function ChatPage() {
               : null;
 
 
-          if (
-            !aggregatedInfo[userId]
-          ) {
+          if (!aggregatedInfo[userId]) {
             aggregatedInfo[userId] = {
-              conversationId:
-                conversationId,
-
+              conversationId,
               lastMessage:
-                lastMessage?.content ||
-                null,
-
+                lastMessage?.content || null,
               lastMessageAt:
-                lastMessage?.created_at ||
-                null,
-
-              unreadCount:
-                unreadCount,
+                lastMessage?.created_at || null,
+              unreadCount,
             };
 
             return;
@@ -499,8 +459,7 @@ export default function ChatPage() {
 
 
           const currentLastMessageAt =
-            lastMessage?.created_at ||
-            null;
+            lastMessage?.created_at || null;
 
 
           if (
@@ -516,16 +475,11 @@ export default function ChatPage() {
             )
           ) {
             aggregatedInfo[userId] = {
-              conversationId:
-                conversationId,
-
+              conversationId,
               lastMessage:
-                lastMessage?.content ||
-                null,
-
+                lastMessage?.content || null,
               lastMessageAt:
                 currentLastMessageAt,
-
               unreadCount:
                 aggregatedInfo[userId]
                   .unreadCount,
@@ -535,10 +489,7 @@ export default function ChatPage() {
       );
 
 
-      setContactInfo(
-        aggregatedInfo
-      );
-
+      setContactInfo(aggregatedInfo);
 
     } catch (error) {
       console.error(
@@ -549,6 +500,435 @@ export default function ChatPage() {
   }
 
 
+  /* ============================================================
+     PRESENCE REALTIME
+
+     Perbaikan:
+     - menggunakan channel tunggal
+     - membaca presenceState()
+     - menangani sync
+     - menangani join
+     - menangani leave
+     - cleanup channel dengan benar
+     ============================================================ */
+
+  useEffect(() => {
+    if (!currentUserId) {
+      return;
+    }
+
+
+    const channel =
+      supabase.channel(
+        "banda-chat-online",
+        {
+          config: {
+            presence: {
+              key: currentUserId,
+            },
+          },
+        }
+      );
+
+
+    presenceChannelRef.current =
+      channel;
+
+
+    const updatePresenceState = () => {
+      const state =
+        channel.presenceState();
+
+
+      const onlineIds =
+        new Set<string>();
+
+
+      Object.values(state).forEach(
+        (presences: any[]) => {
+          presences.forEach(
+            (presence) => {
+              if (
+                typeof presence?.user_id ===
+                "string"
+              ) {
+                onlineIds.add(
+                  presence.user_id
+                );
+              }
+            }
+          );
+        }
+      );
+
+
+      setOnlineUserIds(
+        onlineIds
+      );
+    };
+
+
+    channel.on(
+      "presence",
+      {
+        event: "sync",
+      },
+      () => {
+        updatePresenceState();
+      }
+    );
+
+
+    channel.on(
+      "presence",
+      {
+        event: "join",
+      },
+      () => {
+        updatePresenceState();
+      }
+    );
+
+
+    channel.on(
+      "presence",
+      {
+        event: "leave",
+      },
+      () => {
+        updatePresenceState();
+      }
+    );
+
+
+    channel.subscribe(
+      async (status) => {
+        if (status === "SUBSCRIBED") {
+          const {
+            error,
+          } = await channel.track({
+            user_id: currentUserId,
+            online_at:
+              new Date().toISOString(),
+          });
+
+
+          if (error) {
+            console.error(
+              "Presence track error:",
+              error
+            );
+            return;
+          }
+
+
+          updatePresenceState();
+        }
+
+
+        if (
+          status === "CHANNEL_ERROR" ||
+          status === "TIMED_OUT" ||
+          status === "CLOSED"
+        ) {
+          setOnlineUserIds(
+            (previous) => {
+              const next =
+                new Set(previous);
+
+              next.delete(
+                currentUserId
+              );
+
+              return next;
+            }
+          );
+        }
+      }
+    );
+
+
+    return () => {
+      if (
+        presenceChannelRef.current ===
+        channel
+      ) {
+        presenceChannelRef.current =
+          null;
+      }
+
+
+      channel.untrack().catch(
+        () => {}
+      );
+
+
+      supabase.removeChannel(
+        channel
+      );
+
+
+      setOnlineUserIds(
+        (previous) => {
+          const next =
+            new Set(previous);
+
+          next.delete(
+            currentUserId
+          );
+
+          return next;
+        }
+      );
+    };
+
+  }, [currentUserId]);
+
+
+  /* ============================================================
+     TYPING REALTIME
+     ============================================================ */
+
+  useEffect(() => {
+    if (!currentUserId) {
+      return;
+    }
+
+
+    const channel =
+      supabase.channel(
+        "banda-chat-typing"
+      );
+
+
+    typingChannelRef.current =
+      channel;
+
+
+    channel.on(
+      "broadcast",
+      {
+        event: "typing",
+      },
+      (payload) => {
+        const payloadData =
+          payload.payload as {
+            user_id?: string;
+            conversation_id?: string;
+            is_typing?: boolean;
+          };
+
+
+        const typingUserId =
+          payloadData.user_id;
+
+
+        const conversationId =
+          payloadData.conversation_id;
+
+
+        if (
+          !typingUserId ||
+          typingUserId ===
+            currentUserId
+        ) {
+          return;
+        }
+
+
+        if (
+          conversationId !==
+          selectedConversationIdRef.current
+        ) {
+          return;
+        }
+
+
+        setTypingUserIds(
+          (previous) => {
+            const next =
+              new Set(previous);
+
+
+            if (
+              payloadData.is_typing
+            ) {
+              next.add(
+                typingUserId
+              );
+            } else {
+              next.delete(
+                typingUserId
+              );
+            }
+
+
+            return next;
+          }
+        );
+
+
+        if (
+          typingTimerRef.current
+        ) {
+          clearTimeout(
+            typingTimerRef.current
+          );
+        }
+
+
+        if (
+          payloadData.is_typing
+        ) {
+          typingTimerRef.current =
+            setTimeout(() => {
+              setTypingUserIds(
+                new Set()
+              );
+            }, 1800);
+        }
+      }
+    );
+
+
+    channel.subscribe();
+
+
+    return () => {
+      if (
+        typingTimerRef.current
+      ) {
+        clearTimeout(
+          typingTimerRef.current
+        );
+      }
+
+
+      if (
+        sendTypingTimerRef.current
+      ) {
+        clearTimeout(
+          sendTypingTimerRef.current
+        );
+      }
+
+
+      if (
+        typingChannelRef.current ===
+        channel
+      ) {
+        typingChannelRef.current =
+          null;
+      }
+
+
+      supabase.removeChannel(
+        channel
+      );
+
+
+      setTypingUserIds(
+        new Set()
+      );
+    };
+
+  }, [currentUserId]);
+
+
+  /* ============================================================
+     CLEAR TYPING KETIKA GANTI CHAT
+     ============================================================ */
+
+  useEffect(() => {
+    setTypingUserIds(
+      new Set()
+    );
+  }, [
+    selectedConversation?.id,
+  ]);
+
+
+  /* ============================================================
+     KIRIM TYPING
+     ============================================================ */
+
+  function handleMessageChange(
+    value: string
+  ) {
+    setMessageText(value);
+
+
+    if (
+      !selectedConversation ||
+      !currentUserId
+    ) {
+      return;
+    }
+
+
+    const channel =
+      typingChannelRef.current;
+
+
+    if (!channel) {
+      return;
+    }
+
+
+    if (sendTypingTimerRef.current) {
+      clearTimeout(
+        sendTypingTimerRef.current
+      );
+    }
+
+
+    if (value.trim()) {
+      channel.send({
+        type: "broadcast",
+        event: "typing",
+        payload: {
+          user_id: currentUserId,
+          conversation_id:
+            selectedConversation.id,
+          is_typing: true,
+        },
+      });
+
+
+      sendTypingTimerRef.current =
+        setTimeout(() => {
+          channel.send({
+            type: "broadcast",
+            event: "typing",
+            payload: {
+              user_id:
+                currentUserId,
+              conversation_id:
+                selectedConversation.id,
+              is_typing: false,
+            },
+          });
+        }, 1200);
+
+    } else {
+      channel.send({
+        type: "broadcast",
+        event: "typing",
+        payload: {
+          user_id: currentUserId,
+          conversation_id:
+            selectedConversation.id,
+          is_typing: false,
+        },
+      });
+    }
+  }
+
+
+  /* ============================================================
+     START / LANJUT CHAT
+     ============================================================ */
+
   async function startChat(
     user: Profile
   ) {
@@ -556,7 +936,6 @@ export default function ChatPage() {
       setErrorMessage(
         "Sesi pengguna tidak ditemukan."
       );
-
       return;
     }
 
@@ -573,9 +952,7 @@ export default function ChatPage() {
 
     try {
       const {
-        data: {
-          session,
-        },
+        data: { session },
       } = await supabase.auth.getSession();
 
 
@@ -604,8 +981,7 @@ export default function ChatPage() {
       } = await supabase.rpc(
         "create_direct_conversation",
         {
-          target_user_id:
-            user.id,
+          target_user_id: user.id,
         }
       );
 
@@ -630,18 +1006,10 @@ export default function ChatPage() {
 
 
       const conversation: Conversation = {
-        id:
-          conversationId as string,
-
-        type:
-          "direct",
-
-        name:
-          user.full_name,
-
-        created_by:
-          authUserId,
-
+        id: conversationId as string,
+        type: "direct",
+        name: user.full_name,
+        created_by: authUserId,
         created_at:
           new Date().toISOString(),
       };
@@ -661,15 +1029,7 @@ export default function ChatPage() {
       );
 
 
-      /*
-       * PERBAIKAN MOBILE
-       *
-       * Setelah chat berhasil dibuka,
-       * HP pindah dari daftar kontak
-       * ke halaman percakapan.
-       */
       setMobileChatOpen(true);
-
 
     } catch (error) {
       console.error(
@@ -685,12 +1045,15 @@ export default function ChatPage() {
           : "Gagal membuka chat."
       );
 
-
     } finally {
       setStartingChat(false);
     }
   }
 
+
+  /* ============================================================
+     LOAD MESSAGES
+     ============================================================ */
 
   async function loadMessages(
     conversationId: string,
@@ -712,12 +1075,9 @@ export default function ChatPage() {
           "conversation_id",
           conversationId
         )
-        .order(
-          "created_at",
-          {
-            ascending: true,
-          }
-        );
+        .order("created_at", {
+          ascending: true,
+        });
 
 
       if (error) {
@@ -727,16 +1087,13 @@ export default function ChatPage() {
       }
 
 
-      setMessages(
-        data || []
-      );
+      setMessages(data || []);
 
 
       await markConversationRead(
         conversationId,
         authUserId
       );
-
 
     } catch (error) {
       console.error(
@@ -752,12 +1109,15 @@ export default function ChatPage() {
           : "Gagal memuat pesan."
       );
 
-
     } finally {
       setLoadingMessages(false);
     }
   }
 
+
+  /* ============================================================
+     MARK READ
+     ============================================================ */
 
   async function markConversationRead(
     conversationId: string,
@@ -780,9 +1140,12 @@ export default function ChatPage() {
           "Mark read error:",
           error
         );
-
         return;
       }
+
+
+      const now =
+        new Date().toISOString();
 
 
       setMessages(
@@ -798,10 +1161,10 @@ export default function ChatPage() {
               ) {
                 return {
                   ...message,
-                  read_at:
-                    new Date().toISOString(),
+                  read_at: now,
                 };
               }
+
 
               return message;
             }
@@ -813,7 +1176,6 @@ export default function ChatPage() {
         authUserId
       );
 
-
     } catch (error) {
       console.error(
         "Mark conversation read error:",
@@ -823,11 +1185,12 @@ export default function ChatPage() {
   }
 
 
-  /*
-   * ============================================================
-   * REALTIME - SEMUA PESAN
-   * ============================================================
-   */
+  /* ============================================================
+     REALTIME SEMUA PESAN
+
+     INSERT / UPDATE akan memperbarui daftar kontak,
+     termasuk unread dan pesan terakhir.
+     ============================================================ */
 
   useEffect(() => {
     if (!currentUserId) {
@@ -876,17 +1239,12 @@ export default function ChatPage() {
       );
     };
 
-
-  }, [
-    currentUserId,
-  ]);
+  }, [currentUserId]);
 
 
-  /*
-   * ============================================================
-   * REALTIME - CONVERSATION YANG SEDANG DIBUKA
-   * ============================================================
-   */
+  /* ============================================================
+     REALTIME CHAT AKTIF
+     ============================================================ */
 
   useEffect(() => {
     if (
@@ -905,7 +1263,9 @@ export default function ChatPage() {
       supabase
         .channel(
           "selected-conversation-" +
-            conversationId
+            conversationId +
+            "-" +
+            currentUserId
         )
         .on(
           "postgres_changes",
@@ -918,7 +1278,6 @@ export default function ChatPage() {
               conversationId,
           },
           async (payload) => {
-
             const newMessage =
               payload.new as Message;
 
@@ -959,23 +1318,21 @@ export default function ChatPage() {
               );
 
 
+              const now =
+                new Date().toISOString();
+
+
               setMessages(
                 (previous) =>
                   previous.map(
-                    (message) => {
-                      if (
-                        message.id ===
-                        newMessage.id
-                      ) {
-                        return {
-                          ...message,
-                          read_at:
-                            new Date().toISOString(),
-                        };
-                      }
-
-                      return message;
-                    }
+                    (message) =>
+                      message.id ===
+                      newMessage.id
+                        ? {
+                            ...message,
+                            read_at: now,
+                          }
+                        : message
                   )
               );
             }
@@ -997,7 +1354,6 @@ export default function ChatPage() {
               conversationId,
           },
           async (payload) => {
-
             const updatedMessage =
               payload.new as Message;
 
@@ -1028,23 +1384,29 @@ export default function ChatPage() {
       );
     };
 
-
   }, [
     selectedConversation,
     currentUserId,
   ]);
 
 
+  /* ============================================================
+     AUTO SCROLL
+     ============================================================ */
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView(
-      {
-        behavior: "smooth",
-      }
-    );
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
   }, [
     messages,
+    typingUserIds,
   ]);
 
+
+  /* ============================================================
+     SEND MESSAGE
+     ============================================================ */
 
   async function sendMessage() {
     const content =
@@ -1060,7 +1422,6 @@ export default function ChatPage() {
       setErrorMessage(
         "Pilih percakapan terlebih dahulu."
       );
-
       return;
     }
 
@@ -1069,7 +1430,6 @@ export default function ChatPage() {
       setErrorMessage(
         "Sesi pengguna tidak ditemukan."
       );
-
       return;
     }
 
@@ -1083,11 +1443,30 @@ export default function ChatPage() {
     setErrorMessage("");
 
 
+    if (
+      sendTypingTimerRef.current
+    ) {
+      clearTimeout(
+        sendTypingTimerRef.current
+      );
+    }
+
+
+    typingChannelRef.current?.send({
+      type: "broadcast",
+      event: "typing",
+      payload: {
+        user_id: currentUserId,
+        conversation_id:
+          selectedConversation.id,
+        is_typing: false,
+      },
+    });
+
+
     try {
       const {
-        data: {
-          session,
-        },
+        data: { session },
       } = await supabase.auth.getSession();
 
 
@@ -1109,12 +1488,8 @@ export default function ChatPage() {
         .insert({
           conversation_id:
             selectedConversation.id,
-
-          sender_id:
-            senderId,
-
-          content:
-            content,
+          sender_id: senderId,
+          content,
         })
         .select(
           "id, conversation_id, sender_id, content, created_at, read_at"
@@ -1135,7 +1510,8 @@ export default function ChatPage() {
             const exists =
               previous.some(
                 (message) =>
-                  message.id === data.id
+                  message.id ===
+                  data.id
               );
 
 
@@ -1160,7 +1536,6 @@ export default function ChatPage() {
         senderId
       );
 
-
     } catch (error) {
       console.error(
         "Send message error:",
@@ -1175,12 +1550,15 @@ export default function ChatPage() {
           : "Pesan gagal dikirim."
       );
 
-
     } finally {
       setSendingMessage(false);
     }
   }
 
+
+  /* ============================================================
+     ENTER SEND
+     ============================================================ */
 
   function handleMessageKeyDown(
     event: React.KeyboardEvent<HTMLTextAreaElement>
@@ -1190,11 +1568,14 @@ export default function ChatPage() {
       !event.shiftKey
     ) {
       event.preventDefault();
-
       sendMessage();
     }
   }
 
+
+  /* ============================================================
+     FORMAT
+     ============================================================ */
 
   function formatTime(
     dateString: string | null
@@ -1264,42 +1645,124 @@ export default function ChatPage() {
     return (
       name
         ?.charAt(0)
-        .toUpperCase() || "B"
+        .toUpperCase() ||
+      "B"
     );
   }
 
 
-  const filteredUsers =
-    users.filter(
-      (user) => {
-        const keyword =
-          search
-            .trim()
-            .toLowerCase();
+  function isUserOnline(
+    userId: string | undefined
+  ) {
+    if (!userId) {
+      return false;
+    }
 
 
-        if (!keyword) {
-          return true;
-        }
-
-
-        return (
-          user.full_name
-            .toLowerCase()
-            .includes(
-              keyword
-            ) ||
-          user.username
-            ?.toLowerCase()
-            .includes(
-              keyword
-            )
-        );
-      }
+    return onlineUserIds.has(
+      userId
     );
+  }
 
+
+  function isUserTyping(
+    userId: string | undefined
+  ) {
+    if (!userId) {
+      return false;
+    }
+
+
+    return typingUserIds.has(
+      userId
+    );
+  }
+
+
+  /* ============================================================
+     FILTER USER
+
+     Tetap semua akun hanya satu kali.
+     ============================================================ */
+
+  const filteredUsers =
+    users.filter((user) => {
+      const keyword =
+        search
+          .trim()
+          .toLowerCase();
+
+
+      if (!keyword) {
+        return true;
+      }
+
+
+      return (
+        user.full_name
+          .toLowerCase()
+          .includes(keyword) ||
+        user.username
+          ?.toLowerCase()
+          .includes(keyword)
+      );
+    });
+
+
+  /* ============================================================
+     LOGOUT
+     ============================================================ */
 
   async function handleLogout() {
+    if (
+      selectedConversation &&
+      currentUserId
+    ) {
+      await typingChannelRef.current?.send({
+        type: "broadcast",
+        event: "typing",
+        payload: {
+          user_id: currentUserId,
+          conversation_id:
+            selectedConversation.id,
+          is_typing: false,
+        },
+      });
+    }
+
+
+    if (
+      sendTypingTimerRef.current
+    ) {
+      clearTimeout(
+        sendTypingTimerRef.current
+      );
+    }
+
+
+    if (
+      typingTimerRef.current
+    ) {
+      clearTimeout(
+        typingTimerRef.current
+      );
+    }
+
+
+    try {
+      if (
+        presenceChannelRef.current
+      ) {
+        await presenceChannelRef.current.untrack();
+      }
+    } catch (error) {
+      console.error(
+        "Presence untrack error:",
+        error
+      );
+    }
+
+
     const {
       error,
     } = await supabase.auth.signOut();
@@ -1310,54 +1773,58 @@ export default function ChatPage() {
         "Gagal keluar: " +
           error.message
       );
-
       return;
     }
 
 
-    router.replace(
-      "/login"
+    setOnlineUserIds(
+      new Set()
     );
+
+
+    setTypingUserIds(
+      new Set()
+    );
+
+
+    router.replace("/login");
   }
 
 
-  /*
-   * Tombol kembali khusus HP.
-   *
-   * Conversation tetap tersimpan di state,
-   * hanya tampilan kembali ke daftar kontak.
-   */
   function handleMobileBack() {
     setMobileChatOpen(false);
   }
 
 
+  /* ============================================================
+     LOADING
+     ============================================================ */
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
-
         <div className="text-center">
-
           <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-white/10 border-t-blue-500" />
 
           <p className="text-sm text-slate-400">
             Membuka Banda Chat...
           </p>
-
         </div>
-
       </main>
     );
   }
 
 
+  /* ============================================================
+     UI
+     ============================================================ */
+
   return (
     <main className="flex min-h-screen flex-col bg-slate-950 text-white">
 
-      {/* HEADER UTAMA */}
+      {/* HEADER */}
 
       <header className="border-b border-white/10 bg-slate-900">
-
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-3">
 
           <div className="flex items-center gap-3">
@@ -1367,7 +1834,6 @@ export default function ChatPage() {
             </div>
 
             <div>
-
               <h1 className="font-bold">
                 Banda Chat
               </h1>
@@ -1375,7 +1841,6 @@ export default function ChatPage() {
               <p className="text-xs text-green-400">
                 ● Online
               </p>
-
             </div>
 
           </div>
@@ -1384,7 +1849,6 @@ export default function ChatPage() {
           <div className="flex items-center gap-3">
 
             <div className="hidden text-right sm:block">
-
               <p className="text-sm font-semibold">
                 {profile?.full_name}
               </p>
@@ -1394,26 +1858,22 @@ export default function ChatPage() {
                   @{profile.username}
                 </p>
               )}
-
             </div>
 
 
             {profile?.avatar_url ? (
-
               <img
                 src={profile.avatar_url}
                 alt={profile.full_name}
                 className="h-10 w-10 rounded-full object-cover"
               />
-
             ) : (
-
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 font-bold">
                 {getInitial(
-                  profile?.full_name || "B"
+                  profile?.full_name ||
+                    "B"
                 )}
               </div>
-
             )}
 
 
@@ -1428,7 +1888,6 @@ export default function ChatPage() {
           </div>
 
         </div>
-
       </header>
 
 
@@ -1436,16 +1895,7 @@ export default function ChatPage() {
 
         <div className="mx-auto flex min-h-0 w-full max-w-7xl">
 
-
-          {/* ================================================= */}
-          {/* SIDEBAR / DAFTAR KONTAK */}
-          {/* ================================================= */}
-          {/* DI HP:
-              tampil hanya jika mobileChatOpen = false
-
-              DI PC:
-              selalu tampil
-          */}
+          {/* SIDEBAR */}
 
           <aside
             className={`min-h-0 w-full border-r border-white/10 bg-slate-900 md:flex md:w-80 md:shrink-0 md:flex-col ${
@@ -1534,6 +1984,12 @@ export default function ChatPage() {
                         user.id;
 
 
+                      const userOnline =
+                        isUserOnline(
+                          user.id
+                        );
+
+
                       return (
                         <button
                           key={user.id}
@@ -1555,23 +2011,36 @@ export default function ChatPage() {
 
                           <div className="flex items-center gap-3">
 
-                            {user.avatar_url ? (
+                            <div className="relative shrink-0">
 
-                              <img
-                                src={user.avatar_url}
-                                alt={user.full_name}
-                                className="h-11 w-11 shrink-0 rounded-full object-cover"
-                              />
+                              {user.avatar_url ? (
 
-                            ) : (
+                                <img
+                                  src={
+                                    user.avatar_url
+                                  }
+                                  alt={
+                                    user.full_name
+                                  }
+                                  className="h-11 w-11 rounded-full object-cover"
+                                />
 
-                              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-600 font-bold">
-                                {getInitial(
-                                  user.full_name
-                                )}
-                              </div>
+                              ) : (
 
-                            )}
+                                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 font-bold">
+                                  {getInitial(
+                                    user.full_name
+                                  )}
+                                </div>
+
+                              )}
+
+
+                              {userOnline && (
+                                <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-slate-900 bg-green-500" />
+                              )}
+
+                            </div>
 
 
                             <div className="min-w-0 flex-1">
@@ -1586,25 +2055,23 @@ export default function ChatPage() {
                                 <div className="flex shrink-0 items-center gap-2">
 
                                   {info?.lastMessageAt && (
-
                                     <span className="text-[10px] text-slate-500">
                                       {formatContactTime(
                                         info.lastMessageAt
                                       )}
                                     </span>
-
                                   )}
 
 
                                   {info &&
-                                    info.unreadCount > 0 && (
-
+                                    info.unreadCount >
+                                      0 && (
                                       <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-green-500 px-1 text-[10px] font-bold text-slate-950">
-                                        {info.unreadCount > 99
+                                        {info.unreadCount >
+                                        99
                                           ? "99+"
                                           : info.unreadCount}
                                       </span>
-
                                     )}
 
                                 </div>
@@ -1613,14 +2080,12 @@ export default function ChatPage() {
 
 
                               <p className="mt-1 truncate text-xs text-slate-500">
-
                                 {info?.lastMessage
                                   ? info.lastMessage
                                   : user.username
                                   ? "@" +
                                     user.username
                                   : "Belum ada pesan"}
-
                               </p>
 
                             </div>
@@ -1641,19 +2106,7 @@ export default function ChatPage() {
           </aside>
 
 
-          {/* ================================================= */}
-          {/* CHAT AREA */}
-          {/* ================================================= */}
-          {/* PERBAIKAN UTAMA:
-              sebelumnya:
-              hidden ... md:flex
-
-              sehingga HP tidak pernah bisa melihat chat.
-
-              sekarang:
-              jika mobileChatOpen = true -> flex di HP
-              PC tetap selalu flex
-          */}
+          {/* CHAT */}
 
           <section
             className={`min-h-0 min-w-0 flex-1 flex-col bg-slate-950 md:flex ${
@@ -1691,21 +2144,17 @@ export default function ChatPage() {
 
               <>
 
-
-                {/* ============================================= */}
                 {/* CHAT HEADER */}
-                {/* ============================================= */}
 
                 <div className="border-b border-white/10 bg-slate-900 px-4 py-3 sm:px-5 sm:py-4">
 
                   <div className="flex items-center gap-3">
 
-
-                    {/* TOMBOL KEMBALI KHUSUS HP */}
-
                     <button
                       type="button"
-                      onClick={handleMobileBack}
+                      onClick={
+                        handleMobileBack
+                      }
                       className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg text-slate-300 transition hover:bg-white/10 hover:text-white md:hidden"
                       aria-label="Kembali ke daftar kontak"
                     >
@@ -1713,24 +2162,39 @@ export default function ChatPage() {
                     </button>
 
 
-                    {selectedUser?.avatar_url ? (
+                    <div className="relative shrink-0">
 
-                      <img
-                        src={selectedUser.avatar_url}
-                        alt={selectedUser.full_name}
-                        className="h-11 w-11 shrink-0 rounded-full object-cover"
-                      />
+                      {selectedUser?.avatar_url ? (
 
-                    ) : (
+                        <img
+                          src={
+                            selectedUser.avatar_url
+                          }
+                          alt={
+                            selectedUser.full_name
+                          }
+                          className="h-11 w-11 rounded-full object-cover"
+                        />
 
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-600 font-bold">
-                        {getInitial(
-                          selectedUser?.full_name ||
-                            "B"
-                        )}
-                      </div>
+                      ) : (
 
-                    )}
+                        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 font-bold">
+                          {getInitial(
+                            selectedUser?.full_name ||
+                              "B"
+                          )}
+                        </div>
+
+                      )}
+
+
+                      {isUserOnline(
+                        selectedUser?.id
+                      ) && (
+                        <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-slate-900 bg-green-500" />
+                      )}
+
+                    </div>
 
 
                     <div className="min-w-0">
@@ -1747,9 +2211,43 @@ export default function ChatPage() {
                       )}
 
 
-                      <p className="mt-1 text-xs text-green-400">
-                        ● Online
-                      </p>
+                      {isUserTyping(
+                        selectedUser?.id
+                      ) ? (
+
+                        <div className="mt-1 flex items-center gap-1.5 text-xs text-blue-400">
+
+                          <span>
+                            sedang mengetik
+                          </span>
+
+                          <span className="flex items-center gap-1">
+
+                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400" />
+
+                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400 [animation-delay:150ms]" />
+
+                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400 [animation-delay:300ms]" />
+
+                          </span>
+
+                        </div>
+
+                      ) : isUserOnline(
+                        selectedUser?.id
+                      ) ? (
+
+                        <p className="mt-1 text-xs text-green-400">
+                          ● Online
+                        </p>
+
+                      ) : (
+
+                        <p className="mt-1 text-xs text-slate-500">
+                          ● Offline
+                        </p>
+
+                      )}
 
                     </div>
 
@@ -1758,9 +2256,7 @@ export default function ChatPage() {
                 </div>
 
 
-                {/* ============================================= */}
                 {/* MESSAGES */}
-                {/* ============================================= */}
 
                 <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5 sm:py-6">
 
@@ -1817,7 +2313,9 @@ export default function ChatPage() {
 
                           return (
                             <div
-                              key={message.id}
+                              key={
+                                message.id
+                              }
                               className={`flex ${
                                 isMine
                                   ? "justify-end"
@@ -1834,7 +2332,9 @@ export default function ChatPage() {
                               >
 
                                 <p className="whitespace-pre-wrap break-words text-sm leading-6">
-                                  {message.content}
+                                  {
+                                    message.content
+                                  }
                                 </p>
 
 
@@ -1854,7 +2354,6 @@ export default function ChatPage() {
 
 
                                   {isMine && (
-
                                     <span
                                       className={`text-[11px] font-bold ${
                                         message.read_at
@@ -1871,7 +2370,6 @@ export default function ChatPage() {
                                         ? "✓✓"
                                         : "✓"}
                                     </span>
-
                                   )}
 
                                 </div>
@@ -1884,8 +2382,35 @@ export default function ChatPage() {
                       )}
 
 
+                      {isUserTyping(
+                        selectedUser?.id
+                      ) && (
+
+                        <div className="flex justify-start">
+
+                          <div className="rounded-2xl rounded-bl-md bg-white/10 px-4 py-3">
+
+                            <div className="flex items-center gap-1">
+
+                              <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400" />
+
+                              <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:150ms]" />
+
+                              <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:300ms]" />
+
+                            </div>
+
+                          </div>
+
+                        </div>
+
+                      )}
+
+
                       <div
-                        ref={messagesEndRef}
+                        ref={
+                          messagesEndRef
+                        }
                       />
 
                     </div>
@@ -1895,19 +2420,22 @@ export default function ChatPage() {
                 </div>
 
 
-                {/* ============================================= */}
-                {/* INPUT PESAN */}
-                {/* ============================================= */}
+                {/* INPUT */}
 
                 <div className="border-t border-white/10 bg-slate-900 p-3 sm:p-4">
 
                   <div className="mx-auto flex max-w-3xl items-end gap-2 sm:gap-3">
 
                     <textarea
-                      value={messageText}
-                      onChange={(event) =>
-                        setMessageText(
-                          event.target.value
+                      value={
+                        messageText
+                      }
+                      onChange={(
+                        event
+                      ) =>
+                        handleMessageChange(
+                          event.target
+                            .value
                         )
                       }
                       onKeyDown={
