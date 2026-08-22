@@ -145,21 +145,6 @@ export default function ChatPage() {
    * ============================================================
    * INITIAL AUTH + AUTH STATE
    * ============================================================
-   *
-   * Perbaikan utama:
-   *
-   * Setelah login berhasil dan session Supabase
-   * terbentuk, halaman Chat memastikan session
-   * sudah tersedia lalu langsung memuat:
-   *
-   * - profile
-   * - daftar kontak
-   * - unread message
-   * - realtime
-   *
-   * Tidak perlu buka chat.
-   * Tidak perlu reload.
-   * Tidak perlu login ulang.
    */
   useEffect(() => {
     let mounted = true;
@@ -178,28 +163,18 @@ export default function ChatPage() {
           return;
         }
 
-        /*
-         * LOGIN / SESSION TERBENTUK
-         */
         if (
           event === "SIGNED_IN" ||
           event === "INITIAL_SESSION" ||
           event === "TOKEN_REFRESHED"
         ) {
           if (session?.user) {
-            /*
-             * Jangan menjalankan dua load secara bersamaan.
-             */
             if (!loadingChatRef.current) {
               void loadChat();
             }
           }
         }
 
-        /*
-         * Jika session hilang,
-         * kembali ke halaman login.
-         */
         if (
           event === "SIGNED_OUT"
         ) {
@@ -230,9 +205,6 @@ export default function ChatPage() {
       setLoading(true);
       setErrorMessage("");
 
-      /*
-       * Ambil session terbaru.
-       */
       const {
         data: { session },
         error: sessionError,
@@ -252,9 +224,6 @@ export default function ChatPage() {
       const authUserId =
         session.user.id;
 
-      /*
-       * Set user ID SEBELUM load data lain.
-       */
       setCurrentUserId(
         authUserId
       );
@@ -297,12 +266,6 @@ export default function ChatPage() {
         currentProfile
       );
 
-      /*
-       * Load kontak DAN unread.
-       *
-       * Bagian ini tetap menggunakan fungsi
-       * lama yang sudah terbukti bekerja.
-       */
       await loadUsers(
         authUserId
       );
@@ -382,9 +345,6 @@ export default function ChatPage() {
     authUserId: string
   ) {
     try {
-      /*
-       * Ambil semua conversation user.
-       */
       const {
         data: myMemberships,
         error: myMembershipError,
@@ -420,9 +380,6 @@ export default function ChatPage() {
             item.conversation_id
         );
 
-      /*
-       * Semua anggota conversation.
-       */
       const {
         data: allMembers,
         error: allMembersError,
@@ -460,13 +417,6 @@ export default function ChatPage() {
         }
       );
 
-      /*
-       * Ambil SEMUA pesan dari conversation
-       * yang dimiliki user.
-       *
-       * Ini yang memastikan unread langsung
-       * dihitung ketika baru masuk Chat.
-       */
       const {
         data: allMessages,
         error: messagesError,
@@ -511,13 +461,6 @@ export default function ChatPage() {
                 conversationId
             );
 
-          /*
-           * HITUNG UNREAD
-           *
-           * Pesan:
-           * - dikirim oleh orang lain
-           * - read_at masih null
-           */
           const unreadCount =
             conversationMessages.filter(
               (message) =>
@@ -549,11 +492,6 @@ export default function ChatPage() {
             return;
           }
 
-          /*
-           * Jika terdapat conversation lama
-           * dan conversation baru untuk user
-           * yang sama, tetap digabung.
-           */
           const existing =
             aggregatedInfo[userId];
 
@@ -564,10 +502,6 @@ export default function ChatPage() {
             lastMessage?.created_at ||
             null;
 
-          /*
-           * Jangan sampai unread dari
-           * conversation lain hilang.
-           */
           existing.unreadCount +=
             unreadCount;
 
@@ -596,9 +530,6 @@ export default function ChatPage() {
         }
       );
 
-      /*
-       * Hasil langsung ditampilkan.
-       */
       setContactInfo(
         aggregatedInfo
       );
@@ -1247,9 +1178,6 @@ export default function ChatPage() {
               return;
             }
 
-            /*
-             * LANGSUNG tambah unread.
-             */
             setContactInfo(
               (previous) => {
                 const next = {
@@ -1830,11 +1758,18 @@ export default function ChatPage() {
    */
   if (loading) {
     return (
-      <main className="flex h-screen items-center justify-center overflow-hidden bg-slate-950 text-white">
+      <main className="flex h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100">
         <div className="text-center">
-          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-white/10 border-t-blue-500" />
+          {/* LOGO BALON CHAT */}
+          <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-green-500 text-2xl font-bold text-white shadow-lg shadow-green-500/20">
+            B
 
-          <p className="text-sm text-slate-400">
+            <span className="absolute bottom-0 left-2 h-5 w-5 -translate-x-1/2 rotate-45 bg-green-500" />
+          </div>
+
+          <div className="mx-auto mb-4 h-9 w-9 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
+
+          <p className="text-sm font-medium text-slate-500">
             Membuka Banda Chat...
           </p>
         </div>
@@ -1843,35 +1778,37 @@ export default function ChatPage() {
   }
 
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-slate-950 text-white">
-      {/* HEADER */}
+    <main className="flex h-screen flex-col overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100 text-slate-900">
+      {/* ========================================================
+          HEADER
+          ======================================================== */}
 
-      <header className="z-20 shrink-0 border-b border-white/10 bg-slate-900">
+      <header className="z-20 shrink-0 border-b border-blue-100 bg-blue-600 shadow-sm">
         <div className="mx-auto flex h-[68px] w-full max-w-7xl items-center justify-between px-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-xl font-bold shadow-lg shadow-blue-600/20">
-              B
-            </div>
+          {/* NAMA APLIKASI */}
 
+          <div className="flex items-center">
             <div>
-              <h1 className="font-bold">
+              <h1 className="text-lg font-bold text-white">
                 Banda Chat
               </h1>
 
-              <p className="text-xs text-green-400">
-                ● Online
+              <p className="text-xs text-blue-100">
+                Chat modern dan realtime
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* USER */}
+
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="hidden text-right sm:block">
-              <p className="text-sm font-semibold">
+              <p className="text-sm font-semibold text-white">
                 {profile?.full_name}
               </p>
 
               {profile?.username && (
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-blue-100">
                   @{profile.username}
                 </p>
               )}
@@ -1885,10 +1822,10 @@ export default function ChatPage() {
                 alt={
                   profile.full_name
                 }
-                className="h-10 w-10 rounded-full object-cover"
+                className="h-10 w-10 rounded-full border-2 border-white/70 object-cover shadow-sm"
               />
             ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 font-bold">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-white/70 bg-green-500 font-bold text-white">
                 {getInitial(
                   profile?.full_name ||
                     "B"
@@ -1901,7 +1838,7 @@ export default function ChatPage() {
               onClick={
                 handleLogout
               }
-              className="rounded-xl px-3 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
+              className="rounded-xl px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
             >
               Keluar
             </button>
@@ -1909,64 +1846,90 @@ export default function ChatPage() {
         </div>
       </header>
 
-      {/* AREA APLIKASI */}
+      {/* ========================================================
+          AREA APLIKASI
+          ======================================================== */}
 
-      <div className="min-h-0 flex-1">
-        <div className="mx-auto flex h-full w-full max-w-7xl min-h-0">
-          {/* SIDEBAR KONTAK */}
+      <div className="min-h-0 flex-1 p-0 md:p-3 lg:p-4">
+        <div className="mx-auto flex h-full w-full max-w-7xl min-h-0 overflow-hidden bg-white shadow-none md:rounded-2xl md:shadow-xl md:shadow-blue-100/70">
+          {/* ====================================================
+              SIDEBAR KONTAK
+              ==================================================== */}
 
           <aside
-            className={`h-full min-h-0 w-full flex-col border-r border-white/10 bg-slate-900 md:flex md:w-80 md:shrink-0 ${
+            className={`h-full min-h-0 w-full flex-col border-r border-slate-100 bg-white md:flex md:w-80 md:shrink-0 ${
               mobileChatOpen
                 ? "hidden"
                 : "flex"
             }`}
           >
-            <div className="shrink-0 border-b border-white/10 p-4">
-              <h2 className="text-lg font-bold">
-                Percakapan
-              </h2>
+            <div className="shrink-0 border-b border-slate-100 bg-white p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">
+                    Percakapan
+                  </h2>
 
-              <input
-                type="text"
-                placeholder="Cari pengguna..."
-                value={search}
-                onChange={(event) =>
-                  setSearch(
-                    event.target.value
-                  )
-                }
-                className="mt-4 w-full rounded-xl border border-white/10 bg-slate-800 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-500"
-              />
+                  <p className="mt-1 text-xs text-slate-400">
+                    Pilih kontak untuk mulai chat
+                  </p>
+                </div>
+
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-lg">
+                  💬
+                </div>
+              </div>
+
+              <div className="relative mt-4">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                  🔍
+                </span>
+
+                <input
+                  type="text"
+                  placeholder="Cari pengguna..."
+                  value={search}
+                  onChange={(event) =>
+                    setSearch(
+                      event.target.value
+                    )
+                  }
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50"
+                />
+              </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-300">
+            <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 p-3">
+              <div className="mb-3 flex items-center justify-between px-1">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">
                   Kontak Banda Chat
                 </h3>
 
-                <span className="text-xs text-slate-500">
+                <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-600">
                   {users.length}
                 </span>
               </div>
 
               {loadingUsers ? (
-                <p className="py-6 text-center text-sm text-slate-500">
-                  Memuat pengguna...
-                </p>
+                <div className="rounded-2xl bg-white p-6 text-center shadow-sm">
+                  <div className="mx-auto mb-3 h-7 w-7 animate-spin rounded-full border-3 border-blue-100 border-t-blue-600" />
+
+                  <p className="text-sm text-slate-500">
+                    Memuat pengguna...
+                  </p>
+                </div>
               ) : filteredUsers.length ===
                 0 ? (
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-5 text-center">
-                  <div className="text-3xl">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-2xl">
                     👥
                   </div>
 
-                  <p className="mt-3 text-sm font-semibold">
+                  <p className="mt-3 text-sm font-semibold text-slate-700">
                     Belum ada pengguna lain
                   </p>
 
-                  <p className="mt-1 text-xs text-slate-500">
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
                     Daftar pengguna akan
                     muncul di sini.
                   </p>
@@ -2003,8 +1966,8 @@ export default function ChatPage() {
                           }
                           className={`w-full rounded-2xl border p-3 text-left transition ${
                             isSelected
-                              ? "border-blue-500 bg-blue-500/10"
-                              : "border-white/10 bg-white/5 hover:bg-white/10"
+                              ? "border-blue-200 bg-blue-50 shadow-sm"
+                              : "border-slate-100 bg-white hover:border-blue-100 hover:bg-blue-50/50 hover:shadow-sm"
                           } disabled:cursor-not-allowed disabled:opacity-60`}
                         >
                           <div className="flex items-center gap-3">
@@ -2020,7 +1983,7 @@ export default function ChatPage() {
                                   className="h-11 w-11 rounded-full object-cover"
                                 />
                               ) : (
-                                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 font-bold">
+                                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 font-bold text-white shadow-sm">
                                   {getInitial(
                                     user.full_name
                                   )}
@@ -2028,13 +1991,13 @@ export default function ChatPage() {
                               )}
 
                               {userOnline && (
-                                <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-slate-900 bg-green-500" />
+                                <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-white bg-green-500" />
                               )}
                             </div>
 
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center justify-between gap-2">
-                                <p className="truncate text-sm font-semibold">
+                                <p className="truncate text-sm font-semibold text-slate-800">
                                   {
                                     user.full_name
                                   }
@@ -2042,7 +2005,7 @@ export default function ChatPage() {
 
                                 <div className="flex shrink-0 items-center gap-2">
                                   {info?.lastMessageAt && (
-                                    <span className="text-[10px] text-slate-500">
+                                    <span className="text-[10px] text-slate-400">
                                       {formatContactTime(
                                         info.lastMessageAt
                                       )}
@@ -2052,7 +2015,7 @@ export default function ChatPage() {
                                   {info &&
                                     info.unreadCount >
                                       0 && (
-                                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-green-500 px-1 text-[10px] font-bold text-slate-950">
+                                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-green-500 px-1 text-[10px] font-bold text-white shadow-sm">
                                         {info.unreadCount >
                                         99
                                           ? "99+"
@@ -2062,7 +2025,7 @@ export default function ChatPage() {
                                 </div>
                               </div>
 
-                              <p className="mt-1 truncate text-xs text-slate-500">
+                              <p className="mt-1 truncate text-xs text-slate-400">
                                 {info?.lastMessage
                                   ? info.lastMessage
                                   : user.username
@@ -2081,23 +2044,29 @@ export default function ChatPage() {
             </div>
           </aside>
 
-          {/* CHAT */}
+          {/* ====================================================
+              CHAT
+              ==================================================== */}
 
           <section
-            className={`h-full min-h-0 min-w-0 flex-1 flex-col bg-slate-950 ${
+            className={`h-full min-h-0 min-w-0 flex-1 flex-col bg-gradient-to-br from-sky-50 via-white to-blue-50 ${
               mobileChatOpen
                 ? "flex"
                 : "hidden"
             } md:flex`}
           >
             {!selectedConversation ? (
-              <div className="flex min-h-0 flex-1 items-center justify-center">
+              <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
                 <div className="max-w-md px-6 text-center">
-                  <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-blue-600 text-3xl font-bold shadow-lg shadow-blue-600/20">
+                  {/* LOGO BALON CHAT */}
+
+                  <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-500 text-3xl font-bold text-white shadow-xl shadow-green-500/20">
                     B
+
+                    <span className="absolute bottom-0 left-2 h-5 w-5 -translate-x-1/2 rotate-45 bg-green-500" />
                   </div>
 
-                  <h2 className="mt-6 text-2xl font-bold">
+                  <h2 className="mt-6 text-2xl font-bold text-slate-800">
                     Pilih kontak untuk mulai
                     chat
                   </h2>
@@ -2112,16 +2081,18 @@ export default function ChatPage() {
               </div>
             ) : (
               <>
-                {/* CHAT HEADER */}
+                {/* ==================================================
+                    CHAT HEADER
+                    ================================================== */}
 
-                <div className="shrink-0 border-b border-white/10 bg-slate-900 px-4 py-3 sm:px-5 sm:py-4">
+                <div className="shrink-0 border-b border-slate-100 bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:px-5 sm:py-4">
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
                       onClick={
                         handleMobileBack
                       }
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg text-slate-300 transition hover:bg-white/10 hover:text-white md:hidden"
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 md:hidden"
                       aria-label="Kembali ke daftar kontak"
                     >
                       ←
@@ -2139,7 +2110,7 @@ export default function ChatPage() {
                           className="h-11 w-11 rounded-full object-cover"
                         />
                       ) : (
-                        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 font-bold">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 font-bold text-white shadow-sm">
                           {getInitial(
                             selectedUser?.full_name ||
                               "B"
@@ -2150,19 +2121,19 @@ export default function ChatPage() {
                       {isUserOnline(
                         selectedUser?.id
                       ) && (
-                        <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-slate-900 bg-green-500" />
+                        <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-white bg-green-500" />
                       )}
                     </div>
 
                     <div className="min-w-0">
-                      <h2 className="truncate font-semibold">
+                      <h2 className="truncate font-semibold text-slate-800">
                         {
                           selectedUser?.full_name
                         }
                       </h2>
 
                       {selectedUser?.username && (
-                        <p className="truncate text-xs text-slate-500">
+                        <p className="truncate text-xs text-slate-400">
                           @
                           {
                             selectedUser.username
@@ -2173,25 +2144,25 @@ export default function ChatPage() {
                       {isUserTyping(
                         selectedUser?.id
                       ) ? (
-                        <div className="mt-1 flex items-center gap-1.5 text-xs text-blue-400">
+                        <div className="mt-1 flex items-center gap-1.5 text-xs text-blue-500">
                           <span>
                             sedang mengetik
                           </span>
 
                           <span className="flex items-center gap-1">
-                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400" />
-                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400 [animation-delay:150ms]" />
-                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-400 [animation-delay:300ms]" />
+                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-500" />
+                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-500 [animation-delay:150ms]" />
+                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-500 [animation-delay:300ms]" />
                           </span>
                         </div>
                       ) : isUserOnline(
                           selectedUser?.id
                         ) ? (
-                        <p className="mt-1 text-xs text-green-400">
+                        <p className="mt-1 text-xs text-green-500">
                           ● Online
                         </p>
                       ) : (
-                        <p className="mt-1 text-xs text-slate-500">
+                        <p className="mt-1 text-xs text-slate-400">
                           ● Offline
                         </p>
                       )}
@@ -2199,15 +2170,17 @@ export default function ChatPage() {
                   </div>
                 </div>
 
-                {/* PESAN */}
+                {/* ==================================================
+                    PESAN
+                    ================================================== */}
 
-                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-5 sm:py-6">
+                <div className="min-h-0 flex-1 overflow-y-auto bg-gradient-to-br from-sky-50/80 via-white to-blue-50/80 px-4 py-5 sm:px-5 sm:py-6">
                   {loadingMessages ? (
                     <div className="flex h-full items-center justify-center">
                       <div className="text-center">
-                        <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-white/10 border-t-blue-500" />
+                        <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
 
-                        <p className="text-sm text-slate-500">
+                        <p className="text-sm text-slate-400">
                           Memuat pesan...
                         </p>
                       </div>
@@ -2216,11 +2189,11 @@ export default function ChatPage() {
                     0 ? (
                     <div className="flex h-full items-center justify-center">
                       <div className="text-center">
-                        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-2xl">
+                        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-2xl shadow-sm">
                           💬
                         </div>
 
-                        <h3 className="mt-5 text-lg font-bold">
+                        <h3 className="mt-5 text-lg font-bold text-slate-800">
                           Mulai percakapan
                         </h3>
 
@@ -2253,10 +2226,10 @@ export default function ChatPage() {
                               }`}
                             >
                               <div
-                                className={`max-w-[85%] rounded-2xl px-4 py-3 sm:max-w-[75%] ${
+                                className={`max-w-[85%] rounded-2xl px-4 py-3 shadow-sm sm:max-w-[75%] ${
                                   isMine
-                                    ? "rounded-br-md bg-blue-600 text-white"
-                                    : "rounded-bl-md bg-white/10 text-slate-200"
+                                    ? "rounded-br-md bg-blue-600 text-white shadow-blue-100"
+                                    : "rounded-bl-md border border-slate-200 bg-white text-slate-700"
                                 }`}
                               >
                                 <p className="whitespace-pre-wrap break-words text-sm leading-6">
@@ -2270,7 +2243,7 @@ export default function ChatPage() {
                                     className={`text-[10px] ${
                                       isMine
                                         ? "text-blue-100"
-                                        : "text-slate-500"
+                                        : "text-slate-400"
                                     }`}
                                   >
                                     {formatTime(
@@ -2282,7 +2255,7 @@ export default function ChatPage() {
                                     <span
                                       className={`text-[11px] font-bold ${
                                         message.read_at
-                                          ? "text-green-300"
+                                          ? "text-green-200"
                                           : "text-blue-100"
                                       }`}
                                     >
@@ -2302,7 +2275,7 @@ export default function ChatPage() {
                         selectedUser?.id
                       ) && (
                         <div className="flex justify-start">
-                          <div className="rounded-2xl rounded-bl-md bg-white/10 px-4 py-3">
+                          <div className="rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 shadow-sm">
                             <div className="flex items-center gap-1">
                               <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400" />
                               <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:150ms]" />
@@ -2321,9 +2294,11 @@ export default function ChatPage() {
                   )}
                 </div>
 
-                {/* INPUT */}
+                {/* ==================================================
+                    INPUT PESAN
+                    ================================================== */}
 
-                <div className="shrink-0 border-t border-white/10 bg-slate-900 p-3 sm:p-4">
+                <div className="shrink-0 border-t border-slate-100 bg-white p-3 shadow-[0_-4px_15px_rgba(15,23,42,0.03)] sm:p-4">
                   <div className="mx-auto flex max-w-3xl items-end gap-2 sm:gap-3">
                     <textarea
                       value={
@@ -2342,7 +2317,7 @@ export default function ChatPage() {
                       }
                       rows={1}
                       placeholder="Tulis pesan..."
-                      className="max-h-32 min-h-[48px] flex-1 resize-none rounded-2xl border border-white/10 bg-slate-800 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-500 disabled:opacity-50"
+                      className="max-h-32 min-h-[48px] flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50 disabled:opacity-50"
                     />
 
                     <button
@@ -2354,7 +2329,7 @@ export default function ChatPage() {
                         sendingMessage ||
                         !messageText.trim()
                       }
-                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-xl font-bold transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-xl font-bold text-white shadow-md shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {sendingMessage
                         ? "..."
@@ -2362,7 +2337,7 @@ export default function ChatPage() {
                     </button>
                   </div>
 
-                  <p className="mx-auto mt-2 hidden max-w-3xl text-[10px] text-slate-600 sm:block">
+                  <p className="mx-auto mt-2 hidden max-w-3xl text-[10px] text-slate-400 sm:block">
                     Enter untuk mengirim · Shift +
                     Enter untuk baris baru
                   </p>
@@ -2373,10 +2348,12 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* ERROR */}
+      {/* ========================================================
+          ERROR
+          ======================================================== */}
 
       {errorMessage && (
-        <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-2xl border border-red-500/20 bg-red-950/95 p-4 text-sm text-red-300 shadow-2xl">
+        <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-2xl border border-red-200 bg-white p-4 text-sm text-red-600 shadow-2xl">
           <div className="flex items-start gap-3">
             <span>⚠️</span>
 
@@ -2389,7 +2366,7 @@ export default function ChatPage() {
               onClick={() =>
                 setErrorMessage("")
               }
-              className="text-red-400 hover:text-white"
+              className="text-red-400 transition hover:text-red-700"
             >
               ✕
             </button>
