@@ -28,7 +28,7 @@ export default function GlobalChatFeatures() {
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
-  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  const [inputParent, setInputParent] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -42,14 +42,23 @@ export default function GlobalChatFeatures() {
       const { data: rows } = await supabase.from("profiles").select("id, full_name, username, avatar_url").neq("id", id).order("full_name");
       if (active) setUsers((rows || []) as Profile[]);
     })();
-    const findSlot = () => setSlot(document.getElementById("banda-chat-action-slot"));
-    findSlot();
-    const observer = new MutationObserver(findSlot);
+
+    const findInput = () => {
+      if (window.location.pathname !== "/chat") {
+        setInputParent(null);
+        return;
+      }
+      const textarea = document.querySelector("textarea[placeholder='Tulis pesan...']") as HTMLTextAreaElement | null;
+      setInputParent(textarea?.parentElement || null);
+    };
+    findInput();
+    const observer = new MutationObserver(findInput);
     observer.observe(document.body, { childList: true, subtree: true });
-    return () => { active = false; observer.disconnect(); };
+    const timer = window.setInterval(findInput, 500);
+    return () => { active = false; observer.disconnect(); window.clearInterval(timer); };
   }, []);
 
-  if (!mounted || !userId || !slot || window.location.pathname !== "/chat") return null;
+  if (!mounted || !userId || !inputParent || window.location.pathname !== "/chat") return null;
 
   const content = (
     <div className="relative flex shrink-0 items-center gap-1">
@@ -60,7 +69,7 @@ export default function GlobalChatFeatures() {
       )}
       {callOpen && (
         <div onClick={(e) => e.stopPropagation()} className="absolute bottom-14 right-0 z-[80] w-72 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-          <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2.5"><b className="text-sm text-slate-800">Pilih pengguna</b><button type="button" onClick={() => setCallOpen(false)} className="text-slate-400">✕</button></div>
+          <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2.5"><b className="text-sm text-slate-800">Pilih pengguna untuk panggilan</b><button type="button" onClick={() => setCallOpen(false)} className="text-slate-400">✕</button></div>
           <div className="max-h-52 overflow-y-auto p-2">
             {users.length === 0 ? <p className="py-4 text-center text-xs text-slate-500">Belum ada pengguna lain.</p> : users.map((user) => (
               <button key={user.id} type="button" onClick={() => setSelectedUser(user)} className={`flex w-full items-center gap-2 rounded-xl p-2 text-left hover:bg-slate-50 ${selectedUser?.id === user.id ? "bg-blue-50" : ""}`}>
@@ -77,5 +86,5 @@ export default function GlobalChatFeatures() {
     </div>
   );
 
-  return <>{createPortal(content, slot)}<CallOverlay currentUserId={userId} selectedUser={selectedUser} /></>;
+  return <>{createPortal(content, inputParent)}<CallOverlay currentUserId={userId} selectedUser={selectedUser} /></>;
 }
