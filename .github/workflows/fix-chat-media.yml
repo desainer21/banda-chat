@@ -1,0 +1,96 @@
+name: Fix Banda Chat Media
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  fix-media:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch chat media UI
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('app/chat/page.tsx')
+          text = path.read_text()
+
+          # Add image detail modal state without changing existing chat state.
+          old = '''  const [attachmentPreviewUrl, setAttachmentPreviewUrl] =\n    useState<string | null>(null);\n\n  const [attachmentType, setAttachmentType] ='''
+          new = '''  const [attachmentPreviewUrl, setAttachmentPreviewUrl] =\n    useState<string | null>(null);\n\n  const [imagePreview, setImagePreview] = useState<MessageAttachment | null>(null);\n\n  const [attachmentType, setAttachmentType] ='''
+          if old not in text:
+              raise SystemExit('STATE_ANCHOR_NOT_FOUND')
+          text = text.replace(old, new, 1)
+
+          # Keep the storage path so future attachments can be downloaded reliably.
+          old = '''type MessageAttachment = {\n  type: "image" | "video" | "audio" | "file";\n  url: string;\n  name: string;\n  size: number;\n  mimeType: string;\n};'''
+          new = '''type MessageAttachment = {\n  type: "image" | "video" | "audio" | "file";\n  url: string;\n  path?: string;\n  name: string;\n  size: number;\n  mimeType: string;\n};'''
+          if old not in text:
+              raise SystemExit('TYPE_ANCHOR_NOT_FOUND')
+          text = text.replace(old, new, 1)
+
+          old = '''    const { data } =\n      supabase.storage\n        .from("chat-attachments")\n        .getPublicUrl(filePath);\n\n    if (!data.publicUrl) {\n      throw new Error(\n        "URL file tidak ditemukan."\n      );\n    }\n\n    return data.publicUrl;'''
+          new = '''    const { data } =\n      supabase.storage\n        .from("chat-attachments")\n        .getPublicUrl(filePath);\n\n    if (!data.publicUrl) {\n      throw new Error(\n        "URL file tidak ditemukan."\n      );\n    }\n\n    return {\n      url: data.publicUrl,\n      path: filePath,\n    };'''
+          if old not in text:
+              raise SystemExit('UPLOAD_RETURN_ANCHOR_NOT_FOUND')
+          text = text.replace(old, new, 1)
+
+          old = '''      const url =\n        await uploadChatAttachment(\n          file,\n          senderId,\n          selectedConversation.id\n        );\n\n      const attachment: MessageAttachment = {\n        type: attachmentType || "file",\n        url,\n        name: file.name,\n        size: file.size,\n        mimeType: file.type || "application/octet-stream",\n      };'''
+          new = '''      const uploaded =\n        await uploadChatAttachment(\n          file,\n          senderId,\n          selectedConversation.id\n        );\n\n      const attachment: MessageAttachment = {\n        type: attachmentType || "file",\n        url: uploaded.url,\n        path: uploaded.path,\n        name: file.name,\n        size: file.size,\n        mimeType: file.type || "application/octet-stream",\n      };'''
+          if old not in text:
+              raise SystemExit('ATTACHMENT_CREATE_ANCHOR_NOT_FOUND')
+          text = text.replace(old, new, 1)
+
+          # Replace media renderer only; chat message logic remains untouched.
+          start = text.index('  function renderAttachment(\n')
+          end = text.index('\n  /* ============================================================\n     AUTH + INITIAL CHAT', start)
+          renderer = '''  function downloadAttachment(attachment: MessageAttachment) {\n    const link = document.createElement("a");\n    link.href = attachment.url;\n    link.download = attachment.name;\n    link.target = "_blank";\n    link.rel = "noopener noreferrer";\n    document.body.appendChild(link);\n    link.click();\n    link.remove();\n  }\n\n  function renderAttachment(\n    attachment: MessageAttachment,\n    isMine: boolean\n  ) {\n    if (attachment.type === "image") {\n      return (\n        <div className="overflow-hidden rounded-xl">\n          <button\n            type="button"\n            onClick={() => setImagePreview(attachment)}\n            className="block cursor-zoom-in"\n            aria-label={`Lihat detail ${attachment.name}`}\n          >\n            <img\n              src={attachment.url}\n              alt={attachment.name}\n              loading="lazy"\n              className="max-h-[320px] w-full max-w-[320px] rounded-xl object-contain bg-black/5"\n            />\n          </button>\n          <div className="mt-2 flex items-center gap-2">\n            <p className={`min-w-0 flex-1 truncate text-[10px] ${isMine ? "text-blue-100" : "text-slate-400"}`}>\n              {attachment.name}\n            </p>\n            <button\n              type="button"\n              onClick={() => downloadAttachment(attachment)}\n              className={`shrink-0 rounded-lg px-2 py-1 text-[10px] font-bold ${isMine ? "bg-blue-500 text-white hover:bg-blue-400" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}\n            >\n              Download\n            </button>\n          </div>\n        </div>\n      );\n    }\n\n    if (attachment.type === "video") {\n      return (\n        <div>\n          <video\n            controls\n            playsInline\n            preload="metadata"\n            className="max-h-[320px] w-full max-w-[420px] rounded-xl bg-black"\n          >\n            <source src={attachment.url} type={attachment.mimeType || undefined} />\n            Browser Anda tidak mendukung pemutaran video ini.\n          </video>\n          <div className="mt-2 flex items-center gap-2">\n            <p className={`min-w-0 flex-1 truncate text-[10px] ${isMine ? "text-blue-100" : "text-slate-400"}`}>\n              {attachment.name}\n            </p>\n            <button\n              type="button"\n              onClick={() => downloadAttachment(attachment)}\n              className={`shrink-0 rounded-lg px-2 py-1 text-[10px] font-bold ${isMine ? "bg-blue-500 text-white hover:bg-blue-400" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}\n            >\n              Download\n            </button>\n          </div>\n        </div>\n      );\n    }\n\n    if (attachment.type === "audio") {\n      return (\n        <div className="min-w-[220px] max-w-[300px]">\n          <div className={`mb-2 flex items-center gap-2 text-xs font-semibold ${isMine ? "text-white" : "text-slate-700"}`}>\n            <span className="text-lg">🎙️</span>\n            <span className="min-w-0 flex-1 truncate">{attachment.name}</span>\n          </div>\n          <audio src={attachment.url} controls preload="metadata" className="w-full" />\n          <button\n            type="button"\n            onClick={() => downloadAttachment(attachment)}\n            className={`mt-2 w-full rounded-lg px-3 py-2 text-xs font-bold ${isMine ? "bg-blue-500 text-white hover:bg-blue-400" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}\n          >\n            Download MP3 / Audio\n          </button>\n        </div>\n      );\n    }\n\n    return (\n      <div className={`flex max-w-[320px] items-center gap-3 rounded-xl border p-3 ${isMine ? "border-blue-400 bg-blue-500" : "border-slate-200 bg-slate-50"}`}>\n        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-xl shadow-sm">📎</div>\n        <div className="min-w-0 flex-1">\n          <p className={`truncate text-sm font-semibold ${isMine ? "text-white" : "text-slate-700"}`}>{attachment.name}</p>\n          <p className={`mt-0.5 text-[10px] ${isMine ? "text-blue-100" : "text-slate-400"}`}>{formatFileSize(attachment.size)}</p>\n        </div>\n        <button\n          type="button"\n          onClick={() => downloadAttachment(attachment)}\n          className="shrink-0 rounded-lg bg-white px-3 py-2 text-[10px] font-bold text-slate-700 shadow-sm hover:bg-slate-100"\n        >\n          Download\n        </button>\n      </div>\n    );\n  }\n'''
+          text = text[:start] + renderer + text[end:]
+
+          # Replace plain text rendering with URL-aware rendering.
+          old = '''                                        <p className="whitespace-pre-wrap break-words text-sm leading-6">\n                                          {\n                                            message.content\n                                          }\n                                        </p>'''
+          new = '''                                        <p className="whitespace-pre-wrap break-words text-sm leading-6">\n                                          {message.content.split(/(https?:\\/\\/[^\\s]+|www\\.[^\\s]+)/gi).map((part, index) => {\n                                            const isUrl = /^(https?:\\/\\/|www\\.)/i.test(part);\n                                            if (!isUrl) return <span key={index}>{part}</span>;\n                                            const href = part.startsWith("www.") ? `https://${part}` : part;\n                                            return (\n                                              <a\n                                                key={index}\n                                                href={href}\n                                                target="_blank"\n                                                rel="noopener noreferrer"\n                                                className={`font-semibold underline ${isMine ? "text-sky-200 hover:text-white" : "text-blue-600 hover:text-blue-700"}`}\n                                                onClick={(event) => event.stopPropagation()}\n                                              >\n                                                {part}\n                                              </a>\n                                            );\n                                          })}\n                                        </p>'''
+          if old not in text:
+              raise SystemExit('TEXT_RENDER_ANCHOR_NOT_FOUND')
+          text = text.replace(old, new, 1)
+
+          # Add image detail modal immediately before the main return.
+          marker = '''  return (\n    <main'''
+          modal = '''  return (\n    <>\n      {imagePreview && (\n        <div\n          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"\n          onClick={() => setImagePreview(null)}\n        >\n          <div\n            className="relative flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"\n            onClick={(event) => event.stopPropagation()}\n          >\n            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">\n              <div className="min-w-0 pr-3">\n                <p className="truncate text-sm font-bold text-slate-800">{imagePreview.name}</p>\n                <p className="text-xs text-slate-400">{formatFileSize(imagePreview.size)}</p>\n              </div>\n              <div className="flex items-center gap-2">\n                <button\n                  type="button"\n                  onClick={() => downloadAttachment(imagePreview)}\n                  className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700"\n                >\n                  Download\n                </button>\n                <button\n                  type="button"\n                  onClick={() => setImagePreview(null)}\n                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200"\n                  aria-label="Tutup pratinjau gambar"\n                >\n                  ✕\n                </button>\n              </div>\n            </div>\n            <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-slate-950 p-3 sm:p-6">\n              <img\n                src={imagePreview.url}\n                alt={imagePreview.name}\n                className="max-h-[78vh] max-w-full object-contain"\n              />\n            </div>\n          </div>\n        </div>\n      )}\n\n      <main'''
+          if marker not in text:
+              raise SystemExit('RETURN_ANCHOR_NOT_FOUND')
+          text = text.replace(marker, modal, 1)
+
+          # Close the fragment that now wraps the main element.
+          tail = '''    </main>\n  );\n}'''
+          replacement = '''    </main>\n    </>\n  );\n}'''
+          if tail not in text:
+              raise SystemExit('TAIL_ANCHOR_NOT_FOUND')
+          text = text.replace(tail, replacement, 1)
+
+          path.write_text(text)
+          print('PATCHED', path)
+          PY
+
+      - name: Commit media fixes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/chat/page.tsx
+          git commit -m "Fix chat media preview playback downloads and links"
+          git push
