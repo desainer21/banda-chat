@@ -1,4 +1,6 @@
 -- Banda Chat: private WhatsApp-style groups
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 ALTER TABLE public.conversations
   ADD COLUMN IF NOT EXISTS invite_code text,
   ADD COLUMN IF NOT EXISTS members_can_post boolean NOT NULL DEFAULT true,
