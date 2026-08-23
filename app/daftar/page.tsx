@@ -8,19 +8,29 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import BandaLogo from "@/components/BandaLogo";
 import { supabase } from "@/lib/supabase";
 
 export default function DaftarPage() {
   const router = useRouter();
 
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
+  const [fullName, setFullName] =
+    useState("");
+
+  const [username, setUsername] =
+    useState("");
+
+  const [email, setEmail] =
+    useState("");
+
+  const [password, setPassword] =
+    useState("");
+
   const [confirmPassword, setConfirmPassword] =
     useState("");
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] =
+    useState(false);
 
   const [errorMessage, setErrorMessage] =
     useState("");
@@ -29,9 +39,9 @@ export default function DaftarPage() {
     useState("");
 
   async function handleRegister(
-    e: FormEvent<HTMLFormElement>
+    event: FormEvent<HTMLFormElement>
   ) {
-    e.preventDefault();
+    event.preventDefault();
 
     if (loading) {
       return;
@@ -40,30 +50,32 @@ export default function DaftarPage() {
     setErrorMessage("");
     setSuccessMessage("");
 
-    if (!fullName.trim()) {
+    const cleanName =
+      fullName.trim();
+
+    const cleanUsername =
+      username.trim().toLowerCase();
+
+    const cleanEmail =
+      email.trim();
+
+    if (!cleanName) {
       setErrorMessage(
-        "Nama lengkap wajib diisi."
+        "Nama lengkap harus diisi."
       );
       return;
     }
 
-    if (!email.trim()) {
+    if (!cleanUsername) {
       setErrorMessage(
-        "Email wajib diisi."
+        "Username harus diisi."
       );
       return;
     }
 
-    if (!phone.trim()) {
+    if (!cleanEmail) {
       setErrorMessage(
-        "Nomor telepon wajib diisi."
-      );
-      return;
-    }
-
-    if (!password) {
-      setErrorMessage(
-        "Password wajib diisi."
+        "Email harus diisi."
       );
       return;
     }
@@ -75,7 +87,10 @@ export default function DaftarPage() {
       return;
     }
 
-    if (password !== confirmPassword) {
+    if (
+      password !==
+      confirmPassword
+    ) {
       setErrorMessage(
         "Konfirmasi password tidak sama."
       );
@@ -86,116 +101,119 @@ export default function DaftarPage() {
 
     try {
       /*
-       * 1. Membuat akun di Supabase Auth.
+       * Cek username terlebih dahulu.
        */
       const {
-        data: authData,
-        error: authError,
+        data: existingUsername,
+        error: usernameError,
+      } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq(
+          "username",
+          cleanUsername
+        )
+        .maybeSingle();
+
+      if (usernameError) {
+        throw new Error(
+          usernameError.message
+        );
+      }
+
+      if (existingUsername) {
+        throw new Error(
+          "Username sudah digunakan. Silakan pilih username lain."
+        );
+      }
+
+      /*
+       * Daftar akun Supabase.
+       */
+      const {
+        data,
+        error,
       } = await supabase.auth.signUp({
-        email: email.trim(),
-        password: password,
+        email: cleanEmail,
+        password,
       });
 
-      if (authError) {
+      if (error) {
         throw new Error(
-          authError.message
+          error.message
         );
       }
 
-      if (!authData.user) {
+      if (!data.user) {
         throw new Error(
-          "Akun gagal dibuat. Silakan coba lagi."
+          "Akun belum berhasil dibuat."
         );
       }
 
-      const userId = authData.user.id;
-
       /*
-       * 2. Membuat username otomatis.
+       * Buat/update profile.
        */
-      const emailUsername =
-        email
-          .trim()
-          .toLowerCase()
-          .split("@")[0]
-          .replace(
-            /[^a-z0-9_]/g,
-            ""
-          )
-          .slice(0, 20) || "user";
-
-      const username =
-        `${emailUsername}_${userId.slice(0, 6)}`;
-
-      /*
-       * 3. Menyimpan profil.
-       */
-      const { error: profileError } =
-        await supabase
-          .from("profiles")
-          .insert({
-            id: userId,
-            full_name: fullName.trim(),
-            username: username,
-            phone: phone.trim(),
-          });
+      const {
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .upsert(
+          {
+            id: data.user.id,
+            full_name:
+              cleanName,
+            username:
+              cleanUsername,
+            avatar_url:
+              null,
+          },
+          {
+            onConflict:
+              "id",
+          }
+        );
 
       if (profileError) {
         console.error(
-          "Profile error:",
+          "Create profile error:",
           profileError
-        );
-
-        throw new Error(
-          "Akun berhasil dibuat, tetapi profil gagal disimpan. Silakan hubungi admin."
         );
       }
 
       /*
-       * 4. Konfirmasi email.
+       * Jika Supabase langsung memberikan session,
+       * langsung masuk chat.
        */
-      if (!authData.session) {
-        setSuccessMessage(
-          "Pendaftaran berhasil! Silakan cek email Anda untuk melakukan konfirmasi akun."
-        );
-
-        setFullName("");
-        setEmail("");
-        setPhone("");
-        setPassword("");
-        setConfirmPassword("");
-
+      if (data.session?.user) {
+        window.location.href =
+          "/chat";
         return;
       }
 
       /*
-       * 5. Jika session langsung tersedia.
+       * Jika email confirmation aktif,
+       * tampilkan informasi.
        */
       setSuccessMessage(
-        "Akun berhasil dibuat. Mengarahkan ke Banda Chat..."
+        "Akun berhasil dibuat. Silakan cek email Anda jika diminta melakukan konfirmasi, kemudian masuk ke Banda Chat."
       );
 
-      setTimeout(() => {
-        router.replace("/chat");
-        router.refresh();
-      }, 1000);
-
+      setFullName("");
+      setUsername("");
+      setEmail("");
+      setPassword("");
+      setConfirmPassword("");
     } catch (error) {
       console.error(
         "Register error:",
         error
       );
 
-      if (error instanceof Error) {
-        setErrorMessage(
-          error.message
-        );
-      } else {
-        setErrorMessage(
-          "Terjadi kesalahan. Silakan coba lagi."
-        );
-      }
-
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Pendaftaran gagal. Silakan coba lagi."
+      );
     } finally {
       setLoading(false);
     }
@@ -203,80 +221,93 @@ export default function DaftarPage() {
 
   return (
     <main className="min-h-screen bg-slate-100">
-
-      {/* HEADER TANPA LOGO */}
+      {/* HEADER */}
       <header className="border-b border-blue-700 bg-blue-600 shadow-sm">
-
         <div className="mx-auto flex min-h-[68px] w-full max-w-5xl items-center justify-center px-4">
-
-          <Link
-            href="/login"
-            className="text-center"
-          >
-
+          <div className="text-center">
             <h1 className="text-lg font-bold text-white">
               Banda Chat
             </h1>
 
             <p className="text-xs text-blue-100">
-              Buat akun baru
+              Chat modern dan realtime
             </p>
-
-          </Link>
-
+          </div>
         </div>
       </header>
 
-      {/* HALAMAN DAFTAR */}
-      <section className="px-4 py-8">
-
-        <div className="mx-auto w-full max-w-md">
-
-          {/* KEMBALI LOGIN */}
-          <Link
-            href="/login"
-            className="mb-5 inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition hover:text-blue-600"
-          >
-            ← Kembali ke Login
-          </Link>
-
+      {/* DAFTAR */}
+      <section className="flex min-h-[calc(100vh-68px)] items-center justify-center px-4 py-8">
+        <div className="w-full max-w-md">
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-200/70">
-
-            {/* BAGIAN ATAS */}
+            {/* LOGO */}
             <div className="border-b border-slate-100 px-6 pb-6 pt-8 text-center sm:px-8">
-
-              {/* LOGO UTAMA - TETAP 1 LOGO */}
-              <div
-                className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-[24px] bg-green-500 text-4xl font-extrabold text-white shadow-lg shadow-green-500/20"
-                aria-label="Logo Banda Chat"
-              >
-                <span className="relative z-10 leading-none">
-                  B
-                </span>
-
-                <span className="absolute -bottom-1.5 left-3.5 h-5 w-5 rotate-45 rounded-[4px] bg-green-500" />
+              <div className="mx-auto flex justify-center">
+                <BandaLogo size={82} />
               </div>
 
-              <h2 className="mt-6 text-2xl font-bold text-slate-900">
+              <h2 className="mt-5 text-2xl font-bold text-slate-900">
                 Buat Akun Baru
               </h2>
 
               <p className="mt-2 text-sm leading-6 text-slate-500">
-                Daftar untuk mulai menggunakan
-                Banda Chat.
+                Daftar untuk mulai
+                berkomunikasi di Banda Chat.
               </p>
-
             </div>
 
-            {/* FORM */}
             <div className="p-6 sm:p-8">
+              {/* ERROR */}
+              {errorMessage && (
+                <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  <div className="flex items-start gap-3">
+                    <span>⚠️</span>
+
+                    <p className="flex-1">
+                      {errorMessage}
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setErrorMessage("")
+                      }
+                      className="font-bold text-red-500"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* SUCCESS */}
+              {successMessage && (
+                <div className="mb-5 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">
+                  <div className="flex items-start gap-3">
+                    <span>✓</span>
+
+                    <p className="flex-1">
+                      {successMessage}
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSuccessMessage("")
+                      }
+                      className="font-bold text-green-600"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <form
                 onSubmit={handleRegister}
-                className="space-y-5"
+                className="space-y-4"
               >
-
-                {/* NAMA LENGKAP */}
+                {/* NAMA */}
                 <div>
                   <label
                     htmlFor="fullName"
@@ -288,17 +319,51 @@ export default function DaftarPage() {
                   <input
                     id="fullName"
                     type="text"
+                    autoComplete="name"
                     value={fullName}
-                    onChange={(e) =>
+                    onChange={(event) =>
                       setFullName(
-                        e.target.value
+                        event.target.value
                       )
                     }
-                    placeholder="Masukkan nama lengkap"
-                    autoComplete="name"
                     disabled={loading}
-                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                    placeholder="Nama lengkap"
+                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 disabled:bg-slate-100"
                   />
+                </div>
+
+                {/* USERNAME */}
+                <div>
+                  <label
+                    htmlFor="username"
+                    className="mb-2 block text-sm font-semibold text-slate-700"
+                  >
+                    Username
+                  </label>
+
+                  <input
+                    id="username"
+                    type="text"
+                    autoComplete="username"
+                    value={username}
+                    onChange={(event) =>
+                      setUsername(
+                        event.target.value
+                          .replace(
+                            /\s/g,
+                            ""
+                          )
+                      )
+                    }
+                    disabled={loading}
+                    placeholder="contoh: bandachat"
+                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 disabled:bg-slate-100"
+                  />
+
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Username digunakan sebagai
+                    identitas Anda.
+                  </p>
                 </div>
 
                 {/* EMAIL */}
@@ -313,41 +378,16 @@ export default function DaftarPage() {
                   <input
                     id="email"
                     type="email"
-                    value={email}
-                    onChange={(e) =>
-                      setEmail(
-                        e.target.value
-                      )
-                    }
-                    placeholder="contoh@email.com"
                     autoComplete="email"
-                    disabled={loading}
-                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
-                  />
-                </div>
-
-                {/* NOMOR TELEPON */}
-                <div>
-                  <label
-                    htmlFor="phone"
-                    className="mb-2 block text-sm font-semibold text-slate-700"
-                  >
-                    Nomor Telepon
-                  </label>
-
-                  <input
-                    id="phone"
-                    type="tel"
-                    value={phone}
-                    onChange={(e) =>
-                      setPhone(
-                        e.target.value
+                    value={email}
+                    onChange={(event) =>
+                      setEmail(
+                        event.target.value
                       )
                     }
-                    placeholder="08xxxxxxxxxx"
-                    autoComplete="tel"
                     disabled={loading}
-                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                    placeholder="contoh@email.com"
+                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 disabled:bg-slate-100"
                   />
                 </div>
 
@@ -363,20 +403,20 @@ export default function DaftarPage() {
                   <input
                     id="password"
                     type="password"
+                    autoComplete="new-password"
                     value={password}
-                    onChange={(e) =>
+                    onChange={(event) =>
                       setPassword(
-                        e.target.value
+                        event.target.value
                       )
                     }
-                    placeholder="Minimal 6 karakter"
-                    autoComplete="new-password"
                     disabled={loading}
-                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                    placeholder="Minimal 6 karakter"
+                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 disabled:bg-slate-100"
                   />
                 </div>
 
-                {/* KONFIRMASI PASSWORD */}
+                {/* KONFIRMASI */}
                 <div>
                   <label
                     htmlFor="confirmPassword"
@@ -388,49 +428,42 @@ export default function DaftarPage() {
                   <input
                     id="confirmPassword"
                     type="password"
-                    value={confirmPassword}
-                    onChange={(e) =>
+                    autoComplete="new-password"
+                    value={
+                      confirmPassword
+                    }
+                    onChange={(event) =>
                       setConfirmPassword(
-                        e.target.value
+                        event.target.value
                       )
                     }
-                    placeholder="Masukkan kembali password"
-                    autoComplete="new-password"
                     disabled={loading}
-                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                    placeholder="Ulangi password"
+                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 disabled:bg-slate-100"
                   />
                 </div>
 
-                {/* ERROR */}
-                {errorMessage && (
-                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {errorMessage}
-                  </div>
-                )}
-
-                {/* BERHASIL */}
-                {successMessage && (
-                  <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-                    {successMessage}
-                  </div>
-                )}
-
-                {/* TOMBOL */}
+                {/* DAFTAR */}
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-md shadow-blue-600/20 transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-blue-400"
+                  disabled={
+                    loading ||
+                    !fullName.trim() ||
+                    !username.trim() ||
+                    !email.trim() ||
+                    !password ||
+                    !confirmPassword
+                  }
+                  className="mt-2 flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-md shadow-blue-600/20 transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {loading
-                    ? "Membuat Akun..."
-                    : "Buat Akun"}
+                    ? "Membuat akun..."
+                    : "Daftar ke Banda Chat"}
                 </button>
-
               </form>
 
               {/* LOGIN */}
               <div className="mt-7 border-t border-slate-100 pt-6 text-center">
-
                 <p className="text-sm text-slate-500">
                   Sudah memiliki akun?
                 </p>
@@ -441,18 +474,13 @@ export default function DaftarPage() {
                 >
                   Masuk sekarang
                 </Link>
-
               </div>
-
             </div>
           </div>
 
-          <p className="mt-6 text-center text-xs leading-5 text-slate-400">
-            Dengan membuat akun, Anda dapat menggunakan
-            fitur Banda Chat dan menyimpan informasi akun
-            Anda.
+          <p className="mt-6 text-center text-xs text-slate-400">
+            Banda Chat • Cepat • Sederhana • Realtime
           </p>
-
         </div>
       </section>
     </main>

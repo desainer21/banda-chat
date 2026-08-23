@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  ChangeEvent,
+  KeyboardEvent,
   useEffect,
   useRef,
   useState,
@@ -8,8 +10,8 @@ import {
 
 import { useRouter } from "next/navigation";
 
-import { supabase } from "@/lib/supabase";
 import BandaLogo from "@/components/BandaLogo";
+import { supabase } from "@/lib/supabase";
 
 type Profile = {
   id: string;
@@ -33,6 +35,7 @@ type Message = {
   content: string;
   created_at: string;
   read_at: string | null;
+  updated_at?: string | null;
 };
 
 type ContactInfo = {
@@ -60,12 +63,17 @@ export default function ChatPage() {
     useState<Profile[]>([]);
 
   const [contactInfo, setContactInfo] =
-    useState<Record<string, ContactInfo>>({});
+    useState<
+      Record<string, ContactInfo>
+    >({});
 
   const [selectedUser, setSelectedUser] =
     useState<Profile | null>(null);
 
-  const [selectedConversation, setSelectedConversation] =
+  const [
+    selectedConversation,
+    setSelectedConversation,
+  ] =
     useState<Conversation | null>(null);
 
   const [messages, setMessages] =
@@ -83,49 +91,142 @@ export default function ChatPage() {
   const [loadingUsers, setLoadingUsers] =
     useState(false);
 
-  const [loadingMessages, setLoadingMessages] =
-    useState(false);
+  const [
+    loadingMessages,
+    setLoadingMessages,
+  ] = useState(false);
 
   const [startingChat, setStartingChat] =
     useState(false);
 
-  const [sendingMessage, setSendingMessage] =
-    useState(false);
+  const [
+    sendingMessage,
+    setSendingMessage,
+  ] = useState(false);
 
   const [errorMessage, setErrorMessage] =
     useState("");
 
-  const [mobileChatOpen, setMobileChatOpen] =
-    useState(false);
+  const [
+    mobileChatOpen,
+    setMobileChatOpen,
+  ] = useState(false);
 
-  const [onlineUserIds, setOnlineUserIds] =
-    useState<Set<string>>(new Set());
+  const [
+    onlineUserIds,
+    setOnlineUserIds,
+  ] = useState<Set<string>>(
+    new Set()
+  );
 
-  const [typingUserIds, setTypingUserIds] =
-    useState<Set<string>>(new Set());
+  const [
+    typingUserIds,
+    setTypingUserIds,
+  ] = useState<Set<string>>(
+    new Set()
+  );
+
+  /* ============================================================
+     MESSAGE MENU
+     ============================================================ */
+
+  const [
+    openMessageMenuId,
+    setOpenMessageMenuId,
+  ] = useState<string | null>(null);
+
+  const [
+    editingMessageId,
+    setEditingMessageId,
+  ] = useState<string | null>(null);
+
+  const [
+    editingMessageText,
+    setEditingMessageText,
+  ] = useState("");
+
+  const [
+    savingEdit,
+    setSavingEdit,
+  ] = useState(false);
+
+  const [
+    deletingMessageId,
+    setDeletingMessageId,
+  ] = useState<string | null>(null);
+
+  /* ============================================================
+     PROFILE MODAL
+     ============================================================ */
+
+  const [
+    profileModalOpen,
+    setProfileModalOpen,
+  ] = useState(false);
+
+  const [
+    profileName,
+    setProfileName,
+  ] = useState("");
+
+  const [
+    profileUsername,
+    setProfileUsername,
+  ] = useState("");
+
+  const [
+    profileAvatarUrl,
+    setProfileAvatarUrl,
+  ] = useState<string | null>(null);
+
+  const [
+    selectedAvatarFile,
+    setSelectedAvatarFile,
+  ] = useState<File | null>(null);
+
+  const [
+    avatarPreview,
+    setAvatarPreview,
+  ] = useState<string | null>(null);
+
+  const [
+    savingProfile,
+    setSavingProfile,
+  ] = useState(false);
+
+  const [
+    profileError,
+    setProfileError,
+  ] = useState("");
 
   const messagesEndRef =
-    useRef<HTMLDivElement | null>(null);
+    useRef<HTMLDivElement | null>(
+      null
+    );
 
   const presenceChannelRef =
-    useRef<ReturnType<typeof supabase.channel> | null>(
-      null
-    );
+    useRef<
+      ReturnType<
+        typeof supabase.channel
+      > | null
+    >(null);
 
   const typingChannelRef =
-    useRef<ReturnType<typeof supabase.channel> | null>(
-      null
-    );
+    useRef<
+      ReturnType<
+        typeof supabase.channel
+      > | null
+    >(null);
 
   const typingTimerRef =
-    useRef<ReturnType<typeof setTimeout> | null>(
-      null
-    );
+    useRef<
+      ReturnType<typeof setTimeout> | null
+    >(null);
 
   const sendTypingTimerRef =
-    useRef<ReturnType<typeof setTimeout> | null>(
-      null
-    );
+    useRef<
+      ReturnType<typeof setTimeout> | null
+    >(null);
 
   const selectedConversationIdRef =
     useRef<string | null>(null);
@@ -133,13 +234,18 @@ export default function ChatPage() {
   const loadingChatRef =
     useRef(false);
 
+  const fileInputRef =
+    useRef<HTMLInputElement | null>(
+      null
+    );
+
   useEffect(() => {
     selectedConversationIdRef.current =
       selectedConversation?.id || null;
   }, [selectedConversation]);
 
   /* ============================================================
-     INITIAL AUTH + AUTH STATE
+     AUTH + INITIAL CHAT
      ============================================================ */
 
   useEffect(() => {
@@ -153,34 +259,40 @@ export default function ChatPage() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        if (!mounted) {
-          return;
-        }
+    } =
+      supabase.auth.onAuthStateChange(
+        (event, session) => {
+          if (!mounted) {
+            return;
+          }
 
-        if (
-          event === "SIGNED_IN" ||
-          event === "INITIAL_SESSION" ||
-          event === "TOKEN_REFRESHED"
-        ) {
-          if (session?.user) {
-            if (!loadingChatRef.current) {
+          if (
+            event === "SIGNED_IN" ||
+            event ===
+              "INITIAL_SESSION" ||
+            event ===
+              "TOKEN_REFRESHED"
+          ) {
+            if (
+              session?.user &&
+              !loadingChatRef.current
+            ) {
               void loadChat();
             }
           }
-        }
 
-        if (event === "SIGNED_OUT") {
-          setCurrentUserId("");
-          setProfile(null);
-          setContactInfo({});
-          setUsers([]);
+          if (
+            event === "SIGNED_OUT"
+          ) {
+            setCurrentUserId("");
+            setProfile(null);
+            setContactInfo({});
+            setUsers([]);
 
-          router.replace("/login");
+            router.replace("/login");
+          }
         }
-      }
-    );
+      );
 
     return () => {
       mounted = false;
@@ -202,10 +314,13 @@ export default function ChatPage() {
       const {
         data: { session },
         error: sessionError,
-      } = await supabase.auth.getSession();
+      } =
+        await supabase.auth.getSession();
 
       if (sessionError) {
-        throw new Error(sessionError.message);
+        throw new Error(
+          sessionError.message
+        );
       }
 
       if (!session?.user) {
@@ -213,20 +328,27 @@ export default function ChatPage() {
         return;
       }
 
-      const authUserId = session.user.id;
+      const authUserId =
+        session.user.id;
 
-      setCurrentUserId(authUserId);
+      setCurrentUserId(
+        authUserId
+      );
 
       const {
         data: myProfile,
         error: profileError,
-      } = await supabase
-        .from("profiles")
-        .select(
-          "id, full_name, username, avatar_url"
-        )
-        .eq("id", authUserId)
-        .maybeSingle();
+      } =
+        await supabase
+          .from("profiles")
+          .select(
+            "id, full_name, username, avatar_url"
+          )
+          .eq(
+            "id",
+            authUserId
+          )
+          .maybeSingle();
 
       if (profileError) {
         console.error(
@@ -239,17 +361,25 @@ export default function ChatPage() {
         myProfile || {
           id: authUserId,
           full_name:
-            session.user.email?.split("@")[0] ||
+            session.user.email?.split(
+              "@"
+            )[0] ||
             "Pengguna",
           username: null,
           avatar_url: null,
         };
 
-      setProfile(currentProfile);
+      setProfile(
+        currentProfile
+      );
 
-      await loadUsers(authUserId);
+      await loadUsers(
+        authUserId
+      );
 
-      await loadContactInfo(authUserId);
+      await loadContactInfo(
+        authUserId
+      );
     } catch (error) {
       console.error(
         "Load chat error:",
@@ -263,9 +393,14 @@ export default function ChatPage() {
       );
     } finally {
       setLoading(false);
-      loadingChatRef.current = false;
+      loadingChatRef.current =
+        false;
     }
   }
+
+  /* ============================================================
+     USERS
+     ============================================================ */
 
   async function loadUsers(
     authUserId: string
@@ -281,13 +416,21 @@ export default function ChatPage() {
         .select(
           "id, full_name, username, avatar_url"
         )
-        .neq("id", authUserId)
-        .order("full_name", {
-          ascending: true,
-        });
+        .neq(
+          "id",
+          authUserId
+        )
+        .order(
+          "full_name",
+          {
+            ascending: true,
+          }
+        );
 
       if (error) {
-        throw new Error(error.message);
+        throw new Error(
+          error.message
+        );
       }
 
       setUsers(data || []);
@@ -308,6 +451,10 @@ export default function ChatPage() {
     }
   }
 
+  /* ============================================================
+     CONTACT INFO
+     ============================================================ */
+
   async function loadContactInfo(
     authUserId: string
   ) {
@@ -315,10 +462,18 @@ export default function ChatPage() {
       const {
         data: myMemberships,
         error: myMembershipError,
-      } = await supabase
-        .from("conversation_members")
-        .select("conversation_id")
-        .eq("user_id", authUserId);
+      } =
+        await supabase
+          .from(
+            "conversation_members"
+          )
+          .select(
+            "conversation_id"
+          )
+          .eq(
+            "user_id",
+            authUserId
+          );
 
       if (myMembershipError) {
         console.error(
@@ -338,21 +493,25 @@ export default function ChatPage() {
 
       const conversationIds =
         myMemberships.map(
-          (item) => item.conversation_id
+          (item) =>
+            item.conversation_id
         );
 
       const {
         data: allMembers,
         error: allMembersError,
-      } = await supabase
-        .from("conversation_members")
-        .select(
-          "conversation_id, user_id"
-        )
-        .in(
-          "conversation_id",
-          conversationIds
-        );
+      } =
+        await supabase
+          .from(
+            "conversation_members"
+          )
+          .select(
+            "conversation_id, user_id"
+          )
+          .in(
+            "conversation_id",
+            conversationIds
+          );
 
       if (allMembersError) {
         console.error(
@@ -362,35 +521,44 @@ export default function ChatPage() {
         return;
       }
 
-      const conversationToUser:
-        Record<string, string> = {};
+      const conversationToUser: Record<
+        string,
+        string
+      > = {};
 
-      allMembers?.forEach((member) => {
-        if (
-          member.user_id !==
-          authUserId
-        ) {
-          conversationToUser[
-            member.conversation_id
-          ] = member.user_id;
+      allMembers?.forEach(
+        (member) => {
+          if (
+            member.user_id !==
+            authUserId
+          ) {
+            conversationToUser[
+              member.conversation_id
+            ] =
+              member.user_id;
+          }
         }
-      });
+      );
 
       const {
         data: allMessages,
         error: messagesError,
-      } = await supabase
-        .from("messages")
-        .select(
-          "id, conversation_id, sender_id, content, created_at, read_at"
-        )
-        .in(
-          "conversation_id",
-          conversationIds
-        )
-        .order("created_at", {
-          ascending: false,
-        });
+      } =
+        await supabase
+          .from("messages")
+          .select(
+            "id, conversation_id, sender_id, content, created_at, read_at, updated_at"
+          )
+          .in(
+            "conversation_id",
+            conversationIds
+          )
+          .order(
+            "created_at",
+            {
+              ascending: false,
+            }
+          );
 
       if (messagesError) {
         console.error(
@@ -400,15 +568,19 @@ export default function ChatPage() {
         return;
       }
 
-      const aggregatedInfo:
-        Record<string, ContactInfo> = {};
+      const aggregatedInfo: Record<
+        string,
+        ContactInfo
+      > = {};
 
       Object.entries(
         conversationToUser
       ).forEach(
         ([conversationId, userId]) => {
           const conversationMessages =
-            (allMessages || []).filter(
+            (
+              allMessages || []
+            ).filter(
               (message) =>
                 message.conversation_id ===
                 conversationId
@@ -423,11 +595,14 @@ export default function ChatPage() {
             ).length;
 
           const lastMessage =
-            conversationMessages.length > 0
+            conversationMessages.length >
+            0
               ? conversationMessages[0]
               : null;
 
-          if (!aggregatedInfo[userId]) {
+          if (
+            !aggregatedInfo[userId]
+          ) {
             aggregatedInfo[userId] = {
               conversationId,
               lastMessage:
@@ -457,15 +632,13 @@ export default function ChatPage() {
 
           if (
             currentLastMessageAt &&
-            (
-              !existingLastMessageAt ||
+            (!existingLastMessageAt ||
               new Date(
                 currentLastMessageAt
               ).getTime() >
                 new Date(
                   existingLastMessageAt
-                ).getTime()
-            )
+                ).getTime())
           ) {
             existing.conversationId =
               conversationId;
@@ -505,12 +678,6 @@ export default function ChatPage() {
         currentUserId
       );
     }, 300);
-
-    window.setTimeout(() => {
-      void loadContactInfo(
-        currentUserId
-      );
-    }, 1000);
   }
 
   /* ============================================================
@@ -896,19 +1063,18 @@ export default function ChatPage() {
         );
       }
 
-      const conversation:
-        Conversation = {
-        id:
-          conversationId as string,
-        type:
-          "direct",
-        name:
-          user.full_name,
-        created_by:
-          authUserId,
-        created_at:
-          new Date().toISOString(),
-      };
+      const conversation: Conversation =
+        {
+          id:
+            conversationId as string,
+          type: "direct",
+          name:
+            user.full_name,
+          created_by:
+            authUserId,
+          created_at:
+            new Date().toISOString(),
+        };
 
       setSelectedConversation(
         conversation
@@ -955,18 +1121,22 @@ export default function ChatPage() {
       const {
         data,
         error,
-      } = await supabase
-        .from("messages")
-        .select(
-          "id, conversation_id, sender_id, content, created_at, read_at"
-        )
-        .eq(
-          "conversation_id",
-          conversationId
-        )
-        .order("created_at", {
-          ascending: true,
-        });
+      } =
+        await supabase
+          .from("messages")
+          .select(
+            "id, conversation_id, sender_id, content, created_at, read_at, updated_at"
+          )
+          .eq(
+            "conversation_id",
+            conversationId
+          )
+          .order(
+            "created_at",
+            {
+              ascending: true,
+            }
+          );
 
       if (error) {
         throw new Error(
@@ -1054,7 +1224,9 @@ export default function ChatPage() {
             ...previous,
           };
 
-          Object.keys(next).forEach(
+          Object.keys(
+            next
+          ).forEach(
             (userId) => {
               if (
                 next[userId]
@@ -1085,7 +1257,7 @@ export default function ChatPage() {
   }
 
   /* ============================================================
-     REALTIME SEMUA PESAN
+     REALTIME ALL MESSAGES
      ============================================================ */
 
   useEffect(() => {
@@ -1136,7 +1308,9 @@ export default function ChatPage() {
                 };
 
                 const matchedUserId =
-                  Object.keys(next).find(
+                  Object.keys(
+                    next
+                  ).find(
                     (userId) =>
                       next[userId]
                         .conversationId ===
@@ -1159,7 +1333,8 @@ export default function ChatPage() {
                     unreadCount:
                       next[
                         matchedUserId
-                      ].unreadCount + 1,
+                      ].unreadCount +
+                      1,
                   };
                 }
 
@@ -1181,6 +1356,17 @@ export default function ChatPage() {
             refreshContactInfoRealtime();
           }
         )
+        .on(
+          "postgres_changes",
+          {
+            event: "DELETE",
+            schema: "public",
+            table: "messages",
+          },
+          () => {
+            refreshContactInfoRealtime();
+          }
+        )
         .subscribe();
 
     return () => {
@@ -1191,7 +1377,7 @@ export default function ChatPage() {
   }, [currentUserId]);
 
   /* ============================================================
-     REALTIME CONVERSATION AKTIF
+     REALTIME ACTIVE CONVERSATION
      ============================================================ */
 
   useEffect(() => {
@@ -1352,6 +1538,43 @@ export default function ChatPage() {
             refreshContactInfoRealtime();
           }
         )
+        .on(
+          "postgres_changes",
+          {
+            event: "DELETE",
+            schema: "public",
+            table: "messages",
+            filter:
+              "conversation_id=eq." +
+              conversationId,
+          },
+          (payload) => {
+            const deletedMessage =
+              payload.old as {
+                id?: string;
+              };
+
+            if (
+              deletedMessage.id
+            ) {
+              setMessages(
+                (previous) =>
+                  previous.filter(
+                    (message) =>
+                      message.id !==
+                      deletedMessage.id
+                  )
+              );
+            } else {
+              void loadMessages(
+                conversationId,
+                currentUserId
+              );
+            }
+
+            refreshContactInfoRealtime();
+          }
+        )
         .subscribe();
 
     return () => {
@@ -1365,14 +1588,16 @@ export default function ChatPage() {
   ]);
 
   /* ============================================================
-     SCROLL PESAN
+     SCROLL
      ============================================================ */
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "end",
-    });
+    messagesEndRef.current?.scrollIntoView(
+      {
+        behavior: "smooth",
+        block: "end",
+      }
+    );
   }, [
     messages,
     typingUserIds,
@@ -1422,23 +1647,26 @@ export default function ChatPage() {
     if (
       typingChannelRef.current
     ) {
-      void typingChannelRef.current.send({
-        type: "broadcast",
-        event: "typing",
-        payload: {
-          user_id:
-            currentUserId,
-          conversation_id:
-            selectedConversation.id,
-          is_typing: false,
-        },
-      });
+      void typingChannelRef.current.send(
+        {
+          type: "broadcast",
+          event: "typing",
+          payload: {
+            user_id:
+              currentUserId,
+            conversation_id:
+              selectedConversation.id,
+            is_typing: false,
+          },
+        }
+      );
     }
 
     try {
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } =
+        await supabase.auth.getSession();
 
       if (!session?.user) {
         router.replace("/login");
@@ -1462,7 +1690,7 @@ export default function ChatPage() {
             content,
           })
           .select(
-            "id, conversation_id, sender_id, content, created_at, read_at"
+            "id, conversation_id, sender_id, content, created_at, read_at, updated_at"
           )
           .single();
 
@@ -1516,8 +1744,266 @@ export default function ChatPage() {
     }
   }
 
+  /* ============================================================
+     COPY MESSAGE
+     ============================================================ */
+
+  async function copyMessage(
+    content: string
+  ) {
+    try {
+      await navigator.clipboard.writeText(
+        content
+      );
+
+      setOpenMessageMenuId(null);
+
+      /*
+       * Tidak menggunakan alert agar UI tidak mengganggu.
+       */
+    } catch (error) {
+      console.error(
+        "Copy message error:",
+        error
+      );
+
+      setErrorMessage(
+        "Pesan tidak dapat disalin."
+      );
+    }
+  }
+
+  /* ============================================================
+     START EDIT MESSAGE
+     ============================================================ */
+
+  function startEditMessage(
+    message: Message
+  ) {
+    if (
+      message.sender_id !==
+      currentUserId
+    ) {
+      return;
+    }
+
+    setEditingMessageId(
+      message.id
+    );
+
+    setEditingMessageText(
+      message.content
+    );
+
+    setOpenMessageMenuId(
+      null
+    );
+  }
+
+  /* ============================================================
+     CANCEL EDIT
+     ============================================================ */
+
+  function cancelEditMessage() {
+    setEditingMessageId(
+      null
+    );
+
+    setEditingMessageText("");
+  }
+
+  /* ============================================================
+     SAVE EDIT MESSAGE
+     ============================================================ */
+
+  async function saveEditMessage(
+    messageId: string
+  ) {
+    const content =
+      editingMessageText.trim();
+
+    if (!content) {
+      setErrorMessage(
+        "Pesan tidak boleh kosong."
+      );
+      return;
+    }
+
+    if (
+      !currentUserId ||
+      savingEdit
+    ) {
+      return;
+    }
+
+    setSavingEdit(true);
+    setErrorMessage("");
+
+    try {
+      const {
+        data,
+        error,
+      } =
+        await supabase
+          .from("messages")
+          .update({
+            content,
+          })
+          .eq(
+            "id",
+            messageId
+          )
+          .eq(
+            "sender_id",
+            currentUserId
+          )
+          .select(
+            "id, conversation_id, sender_id, content, created_at, read_at, updated_at"
+          )
+          .single();
+
+      if (error) {
+        throw new Error(
+          error.message
+        );
+      }
+
+      if (data) {
+        setMessages(
+          (previous) =>
+            previous.map(
+              (message) =>
+                message.id ===
+                messageId
+                  ? data
+                  : message
+            )
+        );
+      }
+
+      cancelEditMessage();
+
+      await loadContactInfo(
+        currentUserId
+      );
+    } catch (error) {
+      console.error(
+        "Edit message error:",
+        error
+      );
+
+      setErrorMessage(
+        error instanceof Error
+          ? "Pesan gagal diedit: " +
+              error.message
+          : "Pesan gagal diedit."
+      );
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  /* ============================================================
+     DELETE MESSAGE
+     ============================================================ */
+
+  async function deleteMessage(
+    message: Message
+  ) {
+    if (
+      message.sender_id !==
+      currentUserId
+    ) {
+      return;
+    }
+
+    if (
+      deletingMessageId
+    ) {
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        "Hapus pesan ini?"
+      );
+
+    if (!confirmed) {
+      setOpenMessageMenuId(
+        null
+      );
+      return;
+    }
+
+    setDeletingMessageId(
+      message.id
+    );
+
+    setOpenMessageMenuId(
+      null
+    );
+
+    setErrorMessage("");
+
+    try {
+      const {
+        error,
+      } =
+        await supabase
+          .from("messages")
+          .delete()
+          .eq(
+            "id",
+            message.id
+          )
+          .eq(
+            "sender_id",
+            currentUserId
+          );
+
+      if (error) {
+        throw new Error(
+          error.message
+        );
+      }
+
+      setMessages(
+        (previous) =>
+          previous.filter(
+            (item) =>
+              item.id !==
+              message.id
+          )
+      );
+
+      await loadContactInfo(
+        currentUserId
+      );
+    } catch (error) {
+      console.error(
+        "Delete message error:",
+        error
+      );
+
+      setErrorMessage(
+        error instanceof Error
+          ? "Pesan gagal dihapus: " +
+              error.message
+          : "Pesan gagal dihapus."
+      );
+    } finally {
+      setDeletingMessageId(
+        null
+      );
+    }
+  }
+
+  /* ============================================================
+     MESSAGE KEYBOARD
+     ============================================================ */
+
   function handleMessageKeyDown(
-    event: React.KeyboardEvent<HTMLTextAreaElement>
+    event: KeyboardEvent<HTMLTextAreaElement>
   ) {
     if (
       event.key === "Enter" &&
@@ -1527,6 +2013,399 @@ export default function ChatPage() {
       void sendMessage();
     }
   }
+
+  function handleEditKeyDown(
+    event: KeyboardEvent<HTMLTextAreaElement>,
+    messageId: string
+  ) {
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey
+    ) {
+      event.preventDefault();
+      void saveEditMessage(
+        messageId
+      );
+    }
+
+    if (
+      event.key === "Escape"
+    ) {
+      event.preventDefault();
+      cancelEditMessage();
+    }
+  }
+
+  /* ============================================================
+     PROFILE
+     ============================================================ */
+
+  function openProfileModal() {
+    if (!profile) {
+      return;
+    }
+
+    setProfileName(
+      profile.full_name || ""
+    );
+
+    setProfileUsername(
+      profile.username || ""
+    );
+
+    setProfileAvatarUrl(
+      profile.avatar_url
+    );
+
+    setSelectedAvatarFile(
+      null
+    );
+
+    setAvatarPreview(
+      profile.avatar_url
+    );
+
+    setProfileError("");
+
+    setProfileModalOpen(
+      true
+    );
+  }
+
+  function closeProfileModal() {
+    if (savingProfile) {
+      return;
+    }
+
+    if (
+      avatarPreview &&
+      avatarPreview.startsWith(
+        "blob:"
+      )
+    ) {
+      URL.revokeObjectURL(
+        avatarPreview
+      );
+    }
+
+    setProfileModalOpen(
+      false
+    );
+
+    setSelectedAvatarFile(
+      null
+    );
+
+    setAvatarPreview(
+      profileAvatarUrl
+    );
+
+    setProfileError("");
+  }
+
+  function handleAvatarChange(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const file =
+      event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    setProfileError("");
+
+    /*
+     * Maksimal 5 MB.
+     */
+    if (
+      file.size >
+      5 * 1024 * 1024
+    ) {
+      setProfileError(
+        "Ukuran foto maksimal 5 MB."
+      );
+
+      event.target.value = "";
+      return;
+    }
+
+    if (
+      !file.type.startsWith(
+        "image/"
+      )
+    ) {
+      setProfileError(
+        "File harus berupa gambar."
+      );
+
+      event.target.value = "";
+      return;
+    }
+
+    if (
+      avatarPreview &&
+      avatarPreview.startsWith(
+        "blob:"
+      )
+    ) {
+      URL.revokeObjectURL(
+        avatarPreview
+      );
+    }
+
+    const preview =
+      URL.createObjectURL(
+        file
+      );
+
+    setSelectedAvatarFile(
+      file
+    );
+
+    setAvatarPreview(
+      preview
+    );
+  }
+
+  async function uploadAvatar(
+    file: File,
+    userId: string
+  ) {
+    const extension =
+      file.name
+        .split(".")
+        .pop()
+        ?.toLowerCase() ||
+      "jpg";
+
+    const filePath =
+      userId +
+      "/avatar-" +
+      Date.now() +
+      "." +
+      extension;
+
+    const {
+      error: uploadError,
+    } =
+      await supabase.storage
+        .from("avatars")
+        .upload(
+          filePath,
+          file,
+          {
+            cacheControl:
+              "3600",
+            upsert: false,
+          }
+        );
+
+    if (uploadError) {
+      throw new Error(
+        "Upload foto gagal: " +
+          uploadError.message
+      );
+    }
+
+    const {
+      data,
+    } =
+      supabase.storage
+        .from("avatars")
+        .getPublicUrl(
+          filePath
+        );
+
+    if (!data.publicUrl) {
+      throw new Error(
+        "URL foto profil tidak ditemukan."
+      );
+    }
+
+    return data.publicUrl;
+  }
+
+  async function saveProfile() {
+    if (
+      !profile ||
+      savingProfile
+    ) {
+      return;
+    }
+
+    const cleanName =
+      profileName.trim();
+
+    const cleanUsername =
+      profileUsername
+        .trim()
+        .toLowerCase();
+
+    if (!cleanName) {
+      setProfileError(
+        "Nama lengkap harus diisi."
+      );
+      return;
+    }
+
+    if (!cleanUsername) {
+      setProfileError(
+        "Username harus diisi."
+      );
+      return;
+    }
+
+    setSavingProfile(true);
+    setProfileError("");
+
+    try {
+      /*
+       * Cek username hanya jika berubah.
+       */
+      if (
+        cleanUsername !==
+        (profile.username ||
+          "").toLowerCase()
+      ) {
+        const {
+          data: existingUsername,
+          error: usernameError,
+        } =
+          await supabase
+            .from("profiles")
+            .select("id")
+            .eq(
+              "username",
+              cleanUsername
+            )
+            .neq(
+              "id",
+              profile.id
+            )
+            .maybeSingle();
+
+        if (usernameError) {
+          throw new Error(
+            usernameError.message
+          );
+        }
+
+        if (existingUsername) {
+          throw new Error(
+            "Username sudah digunakan."
+          );
+        }
+      }
+
+      let avatarUrl =
+        profile.avatar_url;
+
+      if (
+        selectedAvatarFile
+      ) {
+        avatarUrl =
+          await uploadAvatar(
+            selectedAvatarFile,
+            profile.id
+          );
+      }
+
+      const {
+        data: updatedProfile,
+        error,
+      } =
+        await supabase
+          .from("profiles")
+          .update({
+            full_name:
+              cleanName,
+            username:
+              cleanUsername,
+            avatar_url:
+              avatarUrl,
+          })
+          .eq(
+            "id",
+            profile.id
+          )
+          .select(
+            "id, full_name, username, avatar_url"
+          )
+          .single();
+
+      if (error) {
+        throw new Error(
+          error.message
+        );
+      }
+
+      if (
+        updatedProfile
+      ) {
+        setProfile(
+          updatedProfile
+        );
+
+        setProfileName(
+          updatedProfile.full_name
+        );
+
+        setProfileUsername(
+          updatedProfile.username ||
+            ""
+        );
+
+        setProfileAvatarUrl(
+          updatedProfile.avatar_url
+        );
+
+        setAvatarPreview(
+          updatedProfile.avatar_url
+        );
+
+        /*
+         * Update daftar pengguna jika
+         * profile ini sedang muncul.
+         */
+        setUsers(
+          (previous) =>
+            previous.map(
+              (user) =>
+                user.id ===
+                updatedProfile.id
+                  ? updatedProfile
+                  : user
+            )
+        );
+      }
+
+      setSelectedAvatarFile(
+        null
+      );
+
+      setProfileModalOpen(
+        false
+      );
+    } catch (error) {
+      console.error(
+        "Save profile error:",
+        error
+      );
+
+      setProfileError(
+        error instanceof Error
+          ? error.message
+          : "Profil gagal diperbarui."
+      );
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  /* ============================================================
+     FORMAT
+     ============================================================ */
 
   function formatTime(
     dateString: string | null
@@ -1594,7 +2473,9 @@ export default function ChatPage() {
   }
 
   function isUserOnline(
-    userId: string | undefined
+    userId:
+      | string
+      | undefined
   ) {
     if (!userId) {
       return false;
@@ -1606,7 +2487,9 @@ export default function ChatPage() {
   }
 
   function isUserTyping(
-    userId: string | undefined
+    userId:
+      | string
+      | undefined
   ) {
     if (!userId) {
       return false;
@@ -1632,13 +2515,21 @@ export default function ChatPage() {
         return (
           user.full_name
             .toLowerCase()
-            .includes(keyword) ||
+            .includes(
+              keyword
+            ) ||
           user.username
             ?.toLowerCase()
-            .includes(keyword)
+            .includes(
+              keyword
+            )
         );
       }
     );
+
+  /* ============================================================
+     LOGOUT
+     ============================================================ */
 
   async function handleLogout() {
     if (
@@ -1648,17 +2539,19 @@ export default function ChatPage() {
       if (
         typingChannelRef.current
       ) {
-        void typingChannelRef.current.send({
-          type: "broadcast",
-          event: "typing",
-          payload: {
-            user_id:
-              currentUserId,
-            conversation_id:
-              selectedConversation.id,
-            is_typing: false,
-          },
-        });
+        void typingChannelRef.current.send(
+          {
+            type: "broadcast",
+            event: "typing",
+            payload: {
+              user_id:
+                currentUserId,
+              conversation_id:
+                selectedConversation.id,
+              is_typing: false,
+            },
+          }
+        );
       }
     }
 
@@ -1677,7 +2570,8 @@ export default function ChatPage() {
 
     const {
       error,
-    } = await supabase.auth.signOut();
+    } =
+      await supabase.auth.signOut();
 
     if (error) {
       setErrorMessage(
@@ -1704,20 +2598,19 @@ export default function ChatPage() {
 
   /* ============================================================
      LOADING
+     
+     PENTING:
+     Tidak ada logo di sini.
+     
+     Login page adalah satu-satunya tempat yang menampilkan
+     logo loading awal.
      ============================================================ */
 
   if (loading) {
     return (
       <main className="flex min-h-[100dvh] h-[100dvh] items-center justify-center overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100">
         <div className="text-center">
-
-          {/* LOGO BARU - SATU KOMPONEN */}
-          <BandaLogo
-            size={64}
-            className="mx-auto mb-5"
-          />
-
-          <div className="mx-auto mb-4 h-9 w-9 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
+          <div className="mx-auto mb-5 h-9 w-9 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
 
           <p className="text-sm font-medium text-slate-500">
             Membuka Banda Chat...
@@ -1728,15 +2621,29 @@ export default function ChatPage() {
   }
 
   return (
-    <main className="flex min-h-[100dvh] h-[100dvh] flex-col overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100 text-slate-900">
-
+    <main
+      className="flex min-h-[100dvh] h-[100dvh] flex-col overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100 text-slate-900"
+      onClick={() => {
+        if (
+          openMessageMenuId
+        ) {
+          setOpenMessageMenuId(
+            null
+          );
+        }
+      }}
+    >
       {/* ========================================================
           HEADER
           ======================================================== */}
 
       <header className="z-20 shrink-0 border-b border-blue-100 bg-blue-600 shadow-sm">
         <div className="mx-auto flex h-[68px] w-full max-w-7xl items-center justify-between px-4">
-          <div className="flex items-center">
+          <div className="flex items-center gap-3">
+            <BandaLogo
+              size={42}
+            />
+
             <div>
               <h1 className="text-lg font-bold text-white">
                 Banda Chat
@@ -1749,36 +2656,50 @@ export default function ChatPage() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="hidden text-right sm:block">
-              <p className="text-sm font-semibold text-white">
-                {profile?.full_name}
-              </p>
-
-              {profile?.username && (
-                <p className="text-xs text-blue-100">
-                  @{profile.username}
+            {/* PROFILE */}
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                openProfileModal();
+              }}
+              className="flex items-center gap-2 rounded-xl px-2 py-1.5 transition hover:bg-white/10"
+              title="Edit profile"
+            >
+              <div className="hidden text-right sm:block">
+                <p className="text-sm font-semibold text-white">
+                  {profile?.full_name}
                 </p>
-              )}
-            </div>
 
-            {profile?.avatar_url ? (
-              <img
-                src={
-                  profile.avatar_url
-                }
-                alt={
-                  profile.full_name
-                }
-                className="h-10 w-10 rounded-full border-2 border-white/70 object-cover shadow-sm"
-              />
-            ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-white/70 bg-green-500 font-bold text-white">
-                {getInitial(
-                  profile?.full_name ||
-                    "B"
+                {profile?.username && (
+                  <p className="text-xs text-blue-100">
+                    @
+                    {
+                      profile.username
+                    }
+                  </p>
                 )}
               </div>
-            )}
+
+              {profile?.avatar_url ? (
+                <img
+                  src={
+                    profile.avatar_url
+                  }
+                  alt={
+                    profile.full_name
+                  }
+                  className="h-10 w-10 rounded-full border-2 border-white/70 object-cover shadow-sm"
+                />
+              ) : (
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-white/70 bg-green-500 font-bold text-white">
+                  {getInitial(
+                    profile?.full_name ||
+                      "B"
+                  )}
+                </div>
+              )}
+            </button>
 
             <button
               type="button"
@@ -1799,9 +2720,8 @@ export default function ChatPage() {
 
       <div className="min-h-0 flex-1 overflow-hidden p-0 md:p-3 lg:p-4">
         <div className="mx-auto flex h-full w-full max-w-7xl min-h-0 overflow-hidden bg-white shadow-none md:rounded-2xl md:shadow-xl md:shadow-blue-100/70">
-
           {/* ====================================================
-              SIDEBAR KONTAK
+              SIDEBAR
               ==================================================== */}
 
           <aside
@@ -1837,7 +2757,9 @@ export default function ChatPage() {
                   type="text"
                   placeholder="Cari pengguna..."
                   value={search}
-                  onChange={(event) =>
+                  onChange={(
+                    event
+                  ) =>
                     setSearch(
                       event.target.value
                     )
@@ -1860,7 +2782,7 @@ export default function ChatPage() {
 
               {loadingUsers ? (
                 <div className="rounded-2xl bg-white p-6 text-center shadow-sm">
-                  <div className="mx-auto mb-3 h-7 w-7 animate-spin rounded-full border-3 border-blue-100 border-t-blue-600" />
+                  <div className="mx-auto mb-3 h-7 w-7 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
 
                   <p className="text-sm text-slate-500">
                     Memuat pengguna...
@@ -1902,7 +2824,9 @@ export default function ChatPage() {
 
                       return (
                         <button
-                          key={user.id}
+                          key={
+                            user.id
+                          }
                           type="button"
                           onClick={() =>
                             void startChat(
@@ -2006,12 +2930,11 @@ export default function ChatPage() {
             {!selectedConversation ? (
               <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
                 <div className="max-w-md px-6 text-center">
-
-                  {/* LOGO BANDA CHAT */}
-                  <BandaLogo
-                    size={80}
-                    className="mx-auto"
-                  />
+                  <div className="mx-auto flex justify-center">
+                    <BandaLogo
+                      size={90}
+                    />
+                  </div>
 
                   <h2 className="mt-6 text-2xl font-bold text-slate-800">
                     Pilih kontak untuk mulai
@@ -2019,8 +2942,8 @@ export default function ChatPage() {
                   </h2>
 
                   <p className="mt-3 text-sm leading-6 text-slate-500">
-                    Setiap akun hanya muncul satu
-                    kali. Klik kontak untuk
+                    Setiap akun hanya muncul
+                    satu kali. Klik kontak untuk
                     membuka atau melanjutkan
                     percakapan sebelumnya.
                   </p>
@@ -2028,10 +2951,7 @@ export default function ChatPage() {
               </div>
             ) : (
               <>
-                {/* ==================================================
-                    CHAT HEADER
-                    ================================================== */}
-
+                {/* CHAT HEADER */}
                 <div className="shrink-0 border-b border-slate-100 bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:px-5 sm:py-4">
                   <div className="flex items-center gap-3">
                     <button
@@ -2117,10 +3037,7 @@ export default function ChatPage() {
                   </div>
                 </div>
 
-                {/* ==================================================
-                    PESAN
-                    ================================================== */}
-
+                {/* PESAN */}
                 <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-gradient-to-br from-sky-50/80 via-white to-blue-50/80 px-4 py-5 pb-6 sm:px-5 sm:py-6">
                   {loadingMessages ? (
                     <div className="flex h-full items-center justify-center">
@@ -2161,57 +3078,243 @@ export default function ChatPage() {
                             message.sender_id ===
                             currentUserId;
 
+                          const isEditing =
+                            editingMessageId ===
+                            message.id;
+
                           return (
                             <div
                               key={
                                 message.id
                               }
-                              className={`flex ${
+                              className={`group flex ${
                                 isMine
                                   ? "justify-end"
                                   : "justify-start"
                               }`}
                             >
-                              <div
-                                className={`max-w-[85%] rounded-2xl px-4 py-3 shadow-sm sm:max-w-[75%] ${
-                                  isMine
-                                    ? "rounded-br-md bg-blue-600 text-white shadow-blue-100"
-                                    : "rounded-bl-md border border-slate-200 bg-white text-slate-700"
-                                }`}
-                              >
-                                <p className="whitespace-pre-wrap break-words text-sm leading-6">
-                                  {
-                                    message.content
-                                  }
-                                </p>
+                              <div className="relative max-w-[88%] sm:max-w-[75%]">
+                                {/* EDIT MODE */}
+                                {isEditing ? (
+                                  <div className="rounded-2xl border border-blue-200 bg-white p-3 shadow-md">
+                                    <textarea
+                                      value={
+                                        editingMessageText
+                                      }
+                                      onChange={(
+                                        event
+                                      ) =>
+                                        setEditingMessageText(
+                                          event.target
+                                            .value
+                                        )
+                                      }
+                                      onKeyDown={(
+                                        event
+                                      ) =>
+                                        handleEditKeyDown(
+                                          event,
+                                          message.id
+                                        )
+                                      }
+                                      autoFocus
+                                      rows={3}
+                                      className="min-h-[80px] w-full resize-none rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50"
+                                    />
 
-                                <div className="mt-1 flex items-center justify-end gap-1">
-                                  <span
-                                    className={`text-[10px] ${
-                                      isMine
-                                        ? "text-blue-100"
-                                        : "text-slate-400"
-                                    }`}
-                                  >
-                                    {formatTime(
-                                      message.created_at
-                                    )}
-                                  </span>
+                                    <div className="mt-2 flex justify-end gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={
+                                          cancelEditMessage
+                                        }
+                                        disabled={
+                                          savingEdit
+                                        }
+                                        className="rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100"
+                                      >
+                                        Batal
+                                      </button>
 
-                                  {isMine && (
-                                    <span
-                                      className={`text-[11px] font-bold ${
-                                        message.read_at
-                                          ? "text-green-200"
-                                          : "text-blue-100"
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void saveEditMessage(
+                                            message.id
+                                          )
+                                        }
+                                        disabled={
+                                          savingEdit ||
+                                          !editingMessageText.trim()
+                                        }
+                                        className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+                                      >
+                                        {savingEdit
+                                          ? "Menyimpan..."
+                                          : "Simpan"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div
+                                      className={`rounded-2xl px-4 py-3 shadow-sm ${
+                                        isMine
+                                          ? "rounded-br-md bg-blue-600 text-white shadow-blue-100"
+                                          : "rounded-bl-md border border-slate-200 bg-white text-slate-700"
                                       }`}
                                     >
-                                      {message.read_at
-                                        ? "✓✓"
-                                        : "✓"}
-                                    </span>
-                                  )}
-                                </div>
+                                      <p className="whitespace-pre-wrap break-words text-sm leading-6">
+                                        {
+                                          message.content
+                                        }
+                                      </p>
+
+                                      <div className="mt-1 flex items-center justify-end gap-1">
+                                        <span
+                                          className={`text-[10px] ${
+                                            isMine
+                                              ? "text-blue-100"
+                                              : "text-slate-400"
+                                          }`}
+                                        >
+                                          {formatTime(
+                                            message.created_at
+                                          )}
+                                        </span>
+
+                                        {message.updated_at &&
+                                          message.updated_at !==
+                                            message.created_at && (
+                                            <span
+                                              className={`text-[9px] ${
+                                                isMine
+                                                  ? "text-blue-100"
+                                                  : "text-slate-400"
+                                              }`}
+                                            >
+                                              diedit
+                                            </span>
+                                          )}
+
+                                        {isMine && (
+                                          <span
+                                            className={`text-[11px] font-bold ${
+                                              message.read_at
+                                                ? "text-green-200"
+                                                : "text-blue-100"
+                                            }`}
+                                          >
+                                            {message.read_at
+                                              ? "✓✓"
+                                              : "✓"}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* MENU BUTTON */}
+                                    <button
+                                      type="button"
+                                      onClick={(
+                                        event
+                                      ) => {
+                                        event.stopPropagation();
+
+                                        setOpenMessageMenuId(
+                                          (
+                                            previous
+                                          ) =>
+                                            previous ===
+                                            message.id
+                                              ? null
+                                              : message.id
+                                        );
+                                      }}
+                                      className={`absolute top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-sm text-slate-500 opacity-0 shadow-sm transition group-hover:opacity-100 ${
+                                        isMine
+                                          ? "-left-10"
+                                          : "-right-10"
+                                      }`}
+                                      aria-label="Menu pesan"
+                                    >
+                                      ⋮
+                                    </button>
+
+                                    {/* MENU */}
+                                    {openMessageMenuId ===
+                                      message.id && (
+                                      <div
+                                        onClick={(
+                                          event
+                                        ) =>
+                                          event.stopPropagation()
+                                        }
+                                        className={`absolute top-full z-40 mt-1 w-32 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl ${
+                                          isMine
+                                            ? "right-0"
+                                            : "left-0"
+                                        }`}
+                                      >
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            void copyMessage(
+                                              message.content
+                                            )
+                                          }
+                                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                        >
+                                          📋
+                                          <span>
+                                            Copy
+                                          </span>
+                                        </button>
+
+                                        {isMine && (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                startEditMessage(
+                                                  message
+                                                )
+                                              }
+                                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                            >
+                                              ✏️
+                                              <span>
+                                                Edit
+                                              </span>
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void deleteMessage(
+                                                  message
+                                                )
+                                              }
+                                              disabled={
+                                                deletingMessageId ===
+                                                message.id
+                                              }
+                                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                            >
+                                              🗑️
+                                              <span>
+                                                {deletingMessageId ===
+                                                message.id
+                                                  ? "Menghapus..."
+                                                  : "Hapus"}
+                                              </span>
+                                            </button>
+                                          </>
+                                        )}
+                                      </div>
+                                    )}
+                                  </>
+                                )}
                               </div>
                             </div>
                           );
@@ -2242,17 +3345,16 @@ export default function ChatPage() {
                   )}
                 </div>
 
-                {/* ==================================================
-                    INPUT PESAN
-                    ================================================== */}
-
-                <div className="shrink-0 border-t border-slate-100 bg-white px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_15px_rgba(15,23,42,0.03)] sm:p-4">
+                {/* INPUT */}
+                <div className="shrink-0 border-t border-slate-100 bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-4px_15px_rgba(15,23,42,0.03)] sm:p-4">
                   <div className="mx-auto flex max-w-3xl items-end gap-2 sm:gap-3">
                     <textarea
                       value={
                         messageText
                       }
-                      onChange={(event) =>
+                      onChange={(
+                        event
+                      ) =>
                         handleMessageChange(
                           event.target.value
                         )
@@ -2286,8 +3388,9 @@ export default function ChatPage() {
                   </div>
 
                   <p className="mx-auto mt-2 hidden max-w-3xl text-[10px] text-slate-400 sm:block">
-                    Enter untuk mengirim · Shift +
-                    Enter untuk baris baru
+                    Enter untuk mengirim ·
+                    Shift + Enter untuk
+                    baris baru
                   </p>
                 </div>
               </>
@@ -2318,6 +3421,228 @@ export default function ChatPage() {
             >
               ✕
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          EDIT PROFILE MODAL
+          ======================================================== */}
+
+      {profileModalOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+          onClick={() => {
+            if (!savingProfile) {
+              closeProfileModal();
+            }
+          }}
+        >
+          <div
+            className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-3xl bg-white shadow-2xl"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+          >
+            {/* HEADER */}
+            <div className="border-b border-slate-100 px-6 py-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">
+                    Edit Profile
+                  </h2>
+
+                  <p className="mt-1 text-xs text-slate-400">
+                    Ubah nama, username, dan foto
+                    profil.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={
+                    closeProfileModal
+                  }
+                  disabled={
+                    savingProfile
+                  }
+                  className="flex h-9 w-9 items-center justify-center rounded-xl text-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* BODY */}
+            <div className="p-6">
+              {/* FOTO */}
+              <div className="flex flex-col items-center">
+                <div className="relative">
+                  {avatarPreview ? (
+                    <img
+                      src={
+                        avatarPreview
+                      }
+                      alt="Preview foto profil"
+                      className="h-28 w-28 rounded-full border-4 border-white object-cover shadow-lg ring-1 ring-slate-200"
+                    />
+                  ) : (
+                    <div className="flex h-28 w-28 items-center justify-center rounded-full bg-blue-600 text-4xl font-bold text-white shadow-lg">
+                      {getInitial(
+                        profileName ||
+                          "B"
+                      )}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      fileInputRef.current?.click()
+                    }
+                    disabled={
+                      savingProfile
+                    }
+                    className="absolute bottom-0 right-0 flex h-10 w-10 items-center justify-center rounded-full border-4 border-white bg-blue-600 text-lg text-white shadow-md hover:bg-blue-700 disabled:opacity-50"
+                    aria-label="Ganti foto profil"
+                  >
+                    📷
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    fileInputRef.current?.click()
+                  }
+                  disabled={
+                    savingProfile
+                  }
+                  className="mt-3 text-sm font-bold text-blue-600 hover:text-blue-800"
+                >
+                  Ganti Foto Profil
+                </button>
+
+                <p className="mt-1 text-center text-[11px] text-slate-400">
+                  Pilih gambar dari galeri HP atau
+                  komputer. Maksimal 5 MB.
+                </p>
+
+                <input
+                  ref={
+                    fileInputRef
+                  }
+                  type="file"
+                  accept="image/*"
+                  onChange={
+                    handleAvatarChange
+                  }
+                  className="hidden"
+                />
+              </div>
+
+              {/* ERROR PROFILE */}
+              {profileError && (
+                <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  ⚠️{" "}
+                  {profileError}
+                </div>
+              )}
+
+              {/* NAMA */}
+              <div className="mt-6">
+                <label
+                  htmlFor="profileName"
+                  className="mb-2 block text-sm font-semibold text-slate-700"
+                >
+                  Nama Lengkap
+                </label>
+
+                <input
+                  id="profileName"
+                  type="text"
+                  value={
+                    profileName
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setProfileName(
+                      event.target.value
+                    )
+                  }
+                  disabled={
+                    savingProfile
+                  }
+                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100 disabled:bg-slate-100"
+                />
+              </div>
+
+              {/* USERNAME */}
+              <div className="mt-4">
+                <label
+                  htmlFor="profileUsername"
+                  className="mb-2 block text-sm font-semibold text-slate-700"
+                >
+                  Username
+                </label>
+
+                <input
+                  id="profileUsername"
+                  type="text"
+                  value={
+                    profileUsername
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setProfileUsername(
+                      event.target.value
+                        .replace(
+                          /\s/g,
+                          ""
+                        )
+                        .toLowerCase()
+                    )
+                  }
+                  disabled={
+                    savingProfile
+                  }
+                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100 disabled:bg-slate-100"
+                />
+              </div>
+
+              {/* BUTTON */}
+              <div className="mt-6 flex gap-3">
+                <button
+                  type="button"
+                  onClick={
+                    closeProfileModal
+                  }
+                  disabled={
+                    savingProfile
+                  }
+                  className="h-12 flex-1 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Batal
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    void saveProfile()
+                  }
+                  disabled={
+                    savingProfile
+                  }
+                  className="h-12 flex-1 rounded-xl bg-blue-600 text-sm font-bold text-white shadow-md shadow-blue-600/20 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {savingProfile
+                    ? "Menyimpan..."
+                    : "Simpan Profile"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

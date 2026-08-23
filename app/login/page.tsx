@@ -9,8 +9,8 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { supabase } from "@/lib/supabase";
 import BandaLogo from "@/components/BandaLogo";
+import { supabase } from "@/lib/supabase";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -75,16 +75,12 @@ export default function LoginPage() {
     const cleanEmail = email.trim();
 
     if (!cleanEmail) {
-      setErrorMessage(
-        "Email harus diisi."
-      );
+      setErrorMessage("Email harus diisi.");
       return;
     }
 
     if (!password) {
-      setErrorMessage(
-        "Password harus diisi."
-      );
+      setErrorMessage("Password harus diisi.");
       return;
     }
 
@@ -109,8 +105,12 @@ export default function LoginPage() {
         );
       }
 
-      router.replace("/chat");
-      router.refresh();
+      /*
+       * PENTING:
+       * Tidak ada loading screen / logo kedua di sini.
+       * Setelah login berhasil langsung pindah ke chat.
+       */
+      window.location.href = "/chat";
     } catch (error) {
       console.error(
         "Login error:",
@@ -122,19 +122,24 @@ export default function LoginPage() {
           ? error.message
           : "Login gagal. Silakan coba lagi."
       );
-    } finally {
+
       setLoading(false);
     }
   }
 
+  /*
+   * Logo loading hanya muncul ketika halaman login
+   * pertama kali dibuka dan sedang memeriksa sesi.
+   *
+   * Saat tombol Login ditekan, bagian ini TIDAK muncul
+   * lagi karena checkingSession sudah false.
+   */
   if (checkingSession) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
         <div className="text-center">
-
-          {/* LOGO LOADING */}
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center">
-            <BandaLogo size={64} />
+          <div className="mx-auto mb-5 flex justify-center">
+            <BandaLogo size={72} />
           </div>
 
           <div className="mx-auto h-9 w-9 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
@@ -149,11 +154,9 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-screen bg-slate-100">
-
-      {/* HEADER TANPA LOGO */}
+      {/* HEADER */}
       <header className="border-b border-blue-700 bg-blue-600 shadow-sm">
         <div className="mx-auto flex min-h-[68px] w-full max-w-5xl items-center justify-center px-4">
-
           <div className="text-center">
             <h1 className="text-lg font-bold text-white">
               Banda Chat
@@ -163,26 +166,20 @@ export default function LoginPage() {
               Chat modern dan realtime
             </p>
           </div>
-
         </div>
       </header>
 
-      {/* HALAMAN LOGIN */}
+      {/* LOGIN */}
       <section className="flex min-h-[calc(100vh-68px)] items-center justify-center px-4 py-8">
-
         <div className="w-full max-w-md">
-
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-200/70">
-
             {/* BAGIAN ATAS */}
             <div className="border-b border-slate-100 px-6 pb-6 pt-8 text-center sm:px-8">
-
-              {/* LOGO UTAMA */}
-              <div className="mx-auto flex h-20 w-20 items-center justify-center">
-                <BandaLogo size={80} />
+              <div className="mx-auto flex justify-center">
+                <BandaLogo size={82} />
               </div>
 
-              <h2 className="mt-6 text-2xl font-bold text-slate-900">
+              <h2 className="mt-5 text-2xl font-bold text-slate-900">
                 Selamat Datang
               </h2>
 
@@ -190,18 +187,13 @@ export default function LoginPage() {
                 Masuk ke akun Banda Chat Anda untuk
                 mulai berkomunikasi dengan teman.
               </p>
-
             </div>
 
-            {/* ISI FORM */}
+            {/* FORM */}
             <div className="p-6 sm:p-8">
-
-              {/* ERROR */}
               {errorMessage && (
                 <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-
                   <div className="flex items-start gap-3">
-
                     <span className="shrink-0">
                       ⚠️
                     </span>
@@ -220,17 +212,14 @@ export default function LoginPage() {
                     >
                       ✕
                     </button>
-
                   </div>
                 </div>
               )}
 
-              {/* FORM */}
               <form
                 onSubmit={handleLogin}
                 className="space-y-5"
               >
-
                 {/* EMAIL */}
                 <div>
                   <label
@@ -281,7 +270,7 @@ export default function LoginPage() {
                   />
                 </div>
 
-                {/* TOMBOL LOGIN */}
+                {/* LOGIN */}
                 <button
                   type="submit"
                   disabled={
@@ -295,12 +284,10 @@ export default function LoginPage() {
                     ? "Memproses..."
                     : "Masuk ke Banda Chat"}
                 </button>
-
               </form>
 
               {/* DAFTAR */}
               <div className="mt-7 border-t border-slate-100 pt-6 text-center">
-
                 <p className="text-sm text-slate-500">
                   Belum memiliki akun?
                 </p>
@@ -311,16 +298,13 @@ export default function LoginPage() {
                 >
                   Daftar sekarang
                 </Link>
-
               </div>
-
             </div>
           </div>
 
           <p className="mt-6 text-center text-xs text-slate-400">
             Banda Chat • Cepat • Sederhana • Realtime
           </p>
-
         </div>
       </section>
     </main>
