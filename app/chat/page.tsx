@@ -28,6 +28,14 @@ type Conversation = {
   created_at: string;
 };
 
+type MessageAttachment = {
+  type: "image" | "video" | "audio" | "file";
+  url: string;
+  name: string;
+  size: number;
+  mimeType: string;
+};
+
 type Message = {
   id: string;
   conversation_id: string;
@@ -53,196 +61,800 @@ type PresenceData = {
 export default function ChatPage() {
   const router = useRouter();
 
-  const [profile, setProfile] =
-    useState<Profile | null>(null);
-
-  const [currentUserId, setCurrentUserId] =
-    useState("");
-
-  const [users, setUsers] =
-    useState<Profile[]>([]);
-
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [currentUserId, setCurrentUserId] = useState("");
+  const [users, setUsers] = useState<Profile[]>([]);
   const [contactInfo, setContactInfo] =
-    useState<
-      Record<string, ContactInfo>
-    >({});
-
-  const [selectedUser, setSelectedUser] =
-    useState<Profile | null>(null);
-
-  const [
-    selectedConversation,
-    setSelectedConversation,
-  ] =
+    useState<Record<string, ContactInfo>>({});
+  const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
+  const [selectedConversation, setSelectedConversation] =
     useState<Conversation | null>(null);
 
-  const [messages, setMessages] =
-    useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [search, setSearch] = useState("");
+  const [messageText, setMessageText] = useState("");
 
-  const [search, setSearch] =
-    useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [startingChat, setStartingChat] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  const [messageText, setMessageText] =
-    useState("");
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [onlineUserIds, setOnlineUserIds] =
+    useState<Set<string>>(new Set());
 
-  const [loadingUsers, setLoadingUsers] =
-    useState(false);
-
-  const [
-    loadingMessages,
-    setLoadingMessages,
-  ] = useState(false);
-
-  const [startingChat, setStartingChat] =
-    useState(false);
-
-  const [
-    sendingMessage,
-    setSendingMessage,
-  ] = useState(false);
-
-  const [errorMessage, setErrorMessage] =
-    useState("");
-
-  const [
-    mobileChatOpen,
-    setMobileChatOpen,
-  ] = useState(false);
-
-  const [
-    onlineUserIds,
-    setOnlineUserIds,
-  ] = useState<Set<string>>(
-    new Set()
-  );
-
-  const [
-    typingUserIds,
-    setTypingUserIds,
-  ] = useState<Set<string>>(
-    new Set()
-  );
+  const [typingUserIds, setTypingUserIds] =
+    useState<Set<string>>(new Set());
 
   /* ============================================================
      MESSAGE MENU
      ============================================================ */
 
-  const [
-    openMessageMenuId,
-    setOpenMessageMenuId,
-  ] = useState<string | null>(null);
+  const [openMessageMenuId, setOpenMessageMenuId] =
+    useState<string | null>(null);
 
-  const [
-    editingMessageId,
-    setEditingMessageId,
-  ] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] =
+    useState<string | null>(null);
 
-  const [
-    editingMessageText,
-    setEditingMessageText,
-  ] = useState("");
+  const [editingMessageText, setEditingMessageText] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingMessageId, setDeletingMessageId] =
+    useState<string | null>(null);
 
-  const [
-    savingEdit,
-    setSavingEdit,
-  ] = useState(false);
+  /* ============================================================
+     ATTACHMENT
+     ============================================================ */
 
-  const [
-    deletingMessageId,
-    setDeletingMessageId,
-  ] = useState<string | null>(null);
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+
+  const [selectedAttachmentFile, setSelectedAttachmentFile] =
+    useState<File | null>(null);
+
+  const [attachmentPreviewUrl, setAttachmentPreviewUrl] =
+    useState<string | null>(null);
+
+  const [attachmentType, setAttachmentType] =
+    useState<MessageAttachment["type"] | null>(null);
+
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+
+  const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef =
+    useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const attachmentInputRef =
+    useRef<HTMLInputElement | null>(null);
+
+  const galleryInputRef =
+    useRef<HTMLInputElement | null>(null);
+
+  const videoInputRef =
+    useRef<HTMLInputElement | null>(null);
+
+  const audioInputRef =
+    useRef<HTMLInputElement | null>(null);
 
   /* ============================================================
      PROFILE MODAL
      ============================================================ */
 
-  const [
-    profileModalOpen,
-    setProfileModalOpen,
-  ] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [profileUsername, setProfileUsername] = useState("");
+  const [profileAvatarUrl, setProfileAvatarUrl] =
+    useState<string | null>(null);
 
-  const [
-    profileName,
-    setProfileName,
-  ] = useState("");
+  const [selectedAvatarFile, setSelectedAvatarFile] =
+    useState<File | null>(null);
 
-  const [
-    profileUsername,
-    setProfileUsername,
-  ] = useState("");
+  const [avatarPreview, setAvatarPreview] =
+    useState<string | null>(null);
 
-  const [
-    profileAvatarUrl,
-    setProfileAvatarUrl,
-  ] = useState<string | null>(null);
-
-  const [
-    selectedAvatarFile,
-    setSelectedAvatarFile,
-  ] = useState<File | null>(null);
-
-  const [
-    avatarPreview,
-    setAvatarPreview,
-  ] = useState<string | null>(null);
-
-  const [
-    savingProfile,
-    setSavingProfile,
-  ] = useState(false);
-
-  const [
-    profileError,
-    setProfileError,
-  ] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileError, setProfileError] = useState("");
 
   const messagesEndRef =
-    useRef<HTMLDivElement | null>(
-      null
-    );
+    useRef<HTMLDivElement | null>(null);
 
   const presenceChannelRef =
-    useRef<
-      ReturnType<
-        typeof supabase.channel
-      > | null
-    >(null);
+    useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const typingChannelRef =
-    useRef<
-      ReturnType<
-        typeof supabase.channel
-      > | null
-    >(null);
+    useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const typingTimerRef =
-    useRef<
-      ReturnType<typeof setTimeout> | null
-    >(null);
+    useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sendTypingTimerRef =
-    useRef<
-      ReturnType<typeof setTimeout> | null
-    >(null);
+    useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedConversationIdRef =
     useRef<string | null>(null);
 
-  const loadingChatRef =
-    useRef(false);
+  const loadingChatRef = useRef(false);
 
   const fileInputRef =
-    useRef<HTMLInputElement | null>(
-      null
-    );
+    useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     selectedConversationIdRef.current =
       selectedConversation?.id || null;
   }, [selectedConversation]);
+
+  /* ============================================================
+     ATTACHMENT HELPERS
+     ============================================================ */
+
+  function formatFileSize(size: number) {
+    if (size < 1024) {
+      return `${size} B`;
+    }
+
+    if (size < 1024 * 1024) {
+      return `${(size / 1024).toFixed(1)} KB`;
+    }
+
+    if (size < 1024 * 1024 * 1024) {
+      return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  }
+
+  function createAttachmentContent(
+    attachment: MessageAttachment
+  ) {
+    return JSON.stringify({
+      __banda_attachment: true,
+      attachment,
+    });
+  }
+
+  function parseAttachmentContent(
+    content: string
+  ): MessageAttachment | null {
+    try {
+      const parsed = JSON.parse(content);
+
+      if (
+        parsed &&
+        parsed.__banda_attachment === true &&
+        parsed.attachment
+      ) {
+        return parsed.attachment as MessageAttachment;
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  function getAttachmentLabel(
+    attachment: MessageAttachment
+  ) {
+    if (attachment.type === "image") {
+      return "📷 Foto";
+    }
+
+    if (attachment.type === "video") {
+      return "🎥 Video";
+    }
+
+    if (attachment.type === "audio") {
+      return "🎵 Audio";
+    }
+
+    return "📎 File";
+  }
+
+  function clearAttachmentPreview() {
+    if (
+      attachmentPreviewUrl &&
+      attachmentPreviewUrl.startsWith("blob:")
+    ) {
+      URL.revokeObjectURL(attachmentPreviewUrl);
+    }
+
+    setAttachmentPreviewUrl(null);
+    setSelectedAttachmentFile(null);
+    setAttachmentType(null);
+  }
+
+  function openAttachmentMenu() {
+    setAttachmentMenuOpen((previous) => !previous);
+  }
+
+  function chooseAttachment(
+    type: "gallery" | "video" | "audio" | "file"
+  ) {
+    setAttachmentMenuOpen(false);
+
+    if (type === "gallery") {
+      galleryInputRef.current?.click();
+      return;
+    }
+
+    if (type === "video") {
+      videoInputRef.current?.click();
+      return;
+    }
+
+    if (type === "audio") {
+      audioInputRef.current?.click();
+      return;
+    }
+
+    attachmentInputRef.current?.click();
+  }
+
+  function handleAttachmentSelected(
+    event: ChangeEvent<HTMLInputElement>,
+    forcedType?: "image" | "video" | "audio" | "file"
+  ) {
+    const file = event.target.files?.[0];
+
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    setErrorMessage("");
+
+    const maxSize = 100 * 1024 * 1024;
+
+    if (file.size > maxSize) {
+      setErrorMessage(
+        "Ukuran file maksimal 100 MB."
+      );
+      return;
+    }
+
+    let type: MessageAttachment["type"] = "file";
+
+    if (forcedType) {
+      type = forcedType;
+    } else if (file.type.startsWith("image/")) {
+      type = "image";
+    } else if (file.type.startsWith("video/")) {
+      type = "video";
+    } else if (file.type.startsWith("audio/")) {
+      type = "audio";
+    }
+
+    if (type === "image" && !file.type.startsWith("image/")) {
+      setErrorMessage("File yang dipilih bukan gambar.");
+      return;
+    }
+
+    if (type === "video" && !file.type.startsWith("video/")) {
+      setErrorMessage("File yang dipilih bukan video.");
+      return;
+    }
+
+    if (type === "audio" && !file.type.startsWith("audio/")) {
+      setErrorMessage("File yang dipilih bukan audio.");
+      return;
+    }
+
+    clearAttachmentPreview();
+
+    setSelectedAttachmentFile(file);
+    setAttachmentType(type);
+
+    if (
+      type === "image" ||
+      type === "video"
+    ) {
+      const preview = URL.createObjectURL(file);
+      setAttachmentPreviewUrl(preview);
+    }
+  }
+
+  async function uploadChatAttachment(
+    file: File,
+    userId: string,
+    conversationId: string
+  ) {
+    const extension =
+      file.name.split(".").pop()?.toLowerCase() || "bin";
+
+    const safeName = file.name
+      .replace(/\s+/g, "-")
+      .replace(/[^a-zA-Z0-9._-]/g, "")
+      .slice(0, 80);
+
+    const filePath =
+      `${userId}/${conversationId}/` +
+      `${Date.now()}-${safeName || `file.${extension}`}`;
+
+    const { error } =
+      await supabase.storage
+        .from("chat-attachments")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+    if (error) {
+      throw new Error(
+        "Upload file gagal: " + error.message
+      );
+    }
+
+    const { data } =
+      supabase.storage
+        .from("chat-attachments")
+        .getPublicUrl(filePath);
+
+    if (!data.publicUrl) {
+      throw new Error(
+        "URL file tidak ditemukan."
+      );
+    }
+
+    return data.publicUrl;
+  }
+
+  async function sendAttachment() {
+    if (!selectedAttachmentFile) {
+      return;
+    }
+
+    if (!selectedConversation) {
+      setErrorMessage(
+        "Pilih percakapan terlebih dahulu."
+      );
+      return;
+    }
+
+    if (!currentUserId) {
+      setErrorMessage(
+        "Sesi pengguna tidak ditemukan."
+      );
+      return;
+    }
+
+    if (uploadingAttachment) {
+      return;
+    }
+
+    setUploadingAttachment(true);
+    setErrorMessage("");
+
+    try {
+      const { data: sessionData } =
+        await supabase.auth.getSession();
+
+      if (!sessionData.session?.user) {
+        router.replace("/login");
+        return;
+      }
+
+      const senderId =
+        sessionData.session.user.id;
+
+      const file = selectedAttachmentFile;
+
+      const url =
+        await uploadChatAttachment(
+          file,
+          senderId,
+          selectedConversation.id
+        );
+
+      const attachment: MessageAttachment = {
+        type: attachmentType || "file",
+        url,
+        name: file.name,
+        size: file.size,
+        mimeType: file.type || "application/octet-stream",
+      };
+
+      const content =
+        createAttachmentContent(
+          attachment
+        );
+
+      const { data, error } =
+        await supabase
+          .from("messages")
+          .insert({
+            conversation_id:
+              selectedConversation.id,
+            sender_id: senderId,
+            content,
+          })
+          .select(
+            "id, conversation_id, sender_id, content, created_at, read_at, updated_at"
+          )
+          .single();
+
+      if (error) {
+        throw new Error(
+          "Pesan file gagal dibuat: " +
+            error.message
+        );
+      }
+
+      if (data) {
+        setMessages((previous) => {
+          const exists = previous.some(
+            (message) =>
+              message.id === data.id
+          );
+
+          if (exists) {
+            return previous;
+          }
+
+          return [...previous, data];
+        });
+      }
+
+      clearAttachmentPreview();
+
+      await loadContactInfo(senderId);
+    } catch (error) {
+      console.error(
+        "Send attachment error:",
+        error
+      );
+
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "File gagal dikirim."
+      );
+    } finally {
+      setUploadingAttachment(false);
+    }
+  }
+
+  async function startVoiceRecording() {
+    if (!selectedConversation) {
+      setErrorMessage(
+        "Pilih percakapan terlebih dahulu."
+      );
+      return;
+    }
+
+    if (recording) {
+      return;
+    }
+
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      setErrorMessage(
+        "Browser ini tidak mendukung rekaman suara."
+      );
+      return;
+    }
+
+    try {
+      const stream =
+        await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+
+      let mimeType = "";
+
+      if (
+        typeof MediaRecorder !== "undefined"
+      ) {
+        if (
+          MediaRecorder.isTypeSupported(
+            "audio/webm;codecs=opus"
+          )
+        ) {
+          mimeType =
+            "audio/webm;codecs=opus";
+        } else if (
+          MediaRecorder.isTypeSupported(
+            "audio/webm"
+          )
+        ) {
+          mimeType = "audio/webm";
+        } else if (
+          MediaRecorder.isTypeSupported(
+            "audio/mp4"
+          )
+        ) {
+          mimeType = "audio/mp4";
+        }
+      }
+
+      const recorder = mimeType
+        ? new MediaRecorder(
+            stream,
+            { mimeType }
+          )
+        : new MediaRecorder(stream);
+
+      mediaRecorderRef.current =
+        recorder;
+
+      recordingChunksRef.current = [];
+
+      recorder.ondataavailable = (
+        event
+      ) => {
+        if (event.data.size > 0) {
+          recordingChunksRef.current.push(
+            event.data
+          );
+        }
+      };
+
+      recorder.onstop = async () => {
+        stream
+          .getTracks()
+          .forEach((track) =>
+            track.stop()
+          );
+
+        const finalType =
+          recorder.mimeType ||
+          "audio/webm";
+
+        const blob = new Blob(
+          recordingChunksRef.current,
+          {
+            type: finalType,
+          }
+        );
+
+        recordingChunksRef.current = [];
+
+        setRecording(false);
+
+        if (
+          recordingTimerRef.current
+        ) {
+          clearInterval(
+            recordingTimerRef.current
+          );
+
+          recordingTimerRef.current =
+            null;
+        }
+
+        setRecordingSeconds(0);
+
+        if (blob.size === 0) {
+          setErrorMessage(
+            "Rekaman suara kosong."
+          );
+          return;
+        }
+
+        const extension =
+          finalType.includes("mp4")
+            ? "m4a"
+            : "webm";
+
+        const file = new File(
+          [blob],
+          `voice-${Date.now()}.${extension}`,
+          {
+            type: finalType,
+          }
+        );
+
+        setSelectedAttachmentFile(file);
+        setAttachmentType("audio");
+        setAttachmentPreviewUrl(
+          URL.createObjectURL(file)
+        );
+      };
+
+      recorder.start();
+
+      setRecording(true);
+      setRecordingSeconds(0);
+
+      recordingTimerRef.current =
+        setInterval(() => {
+          setRecordingSeconds(
+            (previous) =>
+              previous + 1
+          );
+        }, 1000);
+    } catch (error) {
+      console.error(
+        "Start recording error:",
+        error
+      );
+
+      setErrorMessage(
+        "Microphone tidak dapat digunakan. Pastikan izin microphone diberikan."
+      );
+    }
+  }
+
+  function stopVoiceRecording() {
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state !==
+        "inactive"
+    ) {
+      mediaRecorderRef.current.stop();
+    }
+  }
+
+  function cancelVoiceRecording() {
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state !==
+        "inactive"
+    ) {
+      mediaRecorderRef.current.ondataavailable =
+        null;
+      mediaRecorderRef.current.onstop =
+        null;
+
+      mediaRecorderRef.current.stop();
+
+      setRecording(false);
+
+      if (
+        recordingTimerRef.current
+      ) {
+        clearInterval(
+          recordingTimerRef.current
+        );
+
+        recordingTimerRef.current =
+          null;
+      }
+
+      recordingChunksRef.current = [];
+      setRecordingSeconds(0);
+    }
+  }
+
+  function formatRecordingTime(
+    seconds: number
+  ) {
+    const minutes =
+      Math.floor(seconds / 60)
+        .toString()
+        .padStart(2, "0");
+
+    const remaining =
+      (seconds % 60)
+        .toString()
+        .padStart(2, "0");
+
+    return `${minutes}:${remaining}`;
+  }
+
+  function renderAttachment(
+    attachment: MessageAttachment,
+    isMine: boolean
+  ) {
+    if (attachment.type === "image") {
+      return (
+        <div className="overflow-hidden rounded-xl">
+          <img
+            src={attachment.url}
+            alt={attachment.name}
+            className="max-h-[320px] w-full max-w-[320px] rounded-xl object-cover"
+          />
+          <p
+            className={`mt-1 truncate text-[10px] ${
+              isMine
+                ? "text-blue-100"
+                : "text-slate-400"
+            }`}
+          >
+            {attachment.name}
+          </p>
+        </div>
+      );
+    }
+
+    if (attachment.type === "video") {
+      return (
+        <div>
+          <video
+            src={attachment.url}
+            controls
+            playsInline
+            className="max-h-[320px] max-w-[320px] rounded-xl"
+          />
+          <p
+            className={`mt-1 truncate text-[10px] ${
+              isMine
+                ? "text-blue-100"
+                : "text-slate-400"
+            }`}
+          >
+            {attachment.name}
+          </p>
+        </div>
+      );
+    }
+
+    if (attachment.type === "audio") {
+      return (
+        <div className="min-w-[220px] max-w-[300px]">
+          <div
+            className={`mb-2 flex items-center gap-2 text-xs font-semibold ${
+              isMine
+                ? "text-white"
+                : "text-slate-700"
+            }`}
+          >
+            <span className="text-lg">
+              🎙️
+            </span>
+
+            <span className="min-w-0 flex-1 truncate">
+              {attachment.name}
+            </span>
+          </div>
+
+          <audio
+            src={attachment.url}
+            controls
+            className="w-full"
+          />
+        </div>
+      );
+    }
+
+    return (
+      <a
+        href={attachment.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`flex max-w-[300px] items-center gap-3 rounded-xl border p-3 transition ${
+          isMine
+            ? "border-blue-400 bg-blue-500 hover:bg-blue-400"
+            : "border-slate-200 bg-slate-50 hover:bg-slate-100"
+        }`}
+      >
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-xl shadow-sm">
+          📎
+        </div>
+
+        <div className="min-w-0">
+          <p
+            className={`truncate text-sm font-semibold ${
+              isMine
+                ? "text-white"
+                : "text-slate-700"
+            }`}
+          >
+            {attachment.name}
+          </p>
+
+          <p
+            className={`mt-0.5 text-[10px] ${
+              isMine
+                ? "text-blue-100"
+                : "text-slate-400"
+            }`}
+          >
+            {formatFileSize(
+              attachment.size
+            )}
+          </p>
+        </div>
+      </a>
+    );
+  }
 
   /* ============================================================
      AUTH + INITIAL CHAT
@@ -268,10 +880,8 @@ export default function ChatPage() {
 
           if (
             event === "SIGNED_IN" ||
-            event ===
-              "INITIAL_SESSION" ||
-            event ===
-              "TOKEN_REFRESHED"
+            event === "INITIAL_SESSION" ||
+            event === "TOKEN_REFRESHED"
           ) {
             if (
               session?.user &&
@@ -297,6 +907,14 @@ export default function ChatPage() {
     return () => {
       mounted = false;
       subscription.unsubscribe();
+
+      if (
+        recordingTimerRef.current
+      ) {
+        clearInterval(
+          recordingTimerRef.current
+        );
+      }
     };
   }, [router]);
 
@@ -331,9 +949,7 @@ export default function ChatPage() {
       const authUserId =
         session.user.id;
 
-      setCurrentUserId(
-        authUserId
-      );
+      setCurrentUserId(authUserId);
 
       const {
         data: myProfile,
@@ -363,8 +979,7 @@ export default function ChatPage() {
           full_name:
             session.user.email?.split(
               "@"
-            )[0] ||
-            "Pengguna",
+            )[0] || "Pengguna",
           username: null,
           avatar_url: null,
         };
@@ -411,21 +1026,22 @@ export default function ChatPage() {
       const {
         data,
         error,
-      } = await supabase
-        .from("profiles")
-        .select(
-          "id, full_name, username, avatar_url"
-        )
-        .neq(
-          "id",
-          authUserId
-        )
-        .order(
-          "full_name",
-          {
-            ascending: true,
-          }
-        );
+      } =
+        await supabase
+          .from("profiles")
+          .select(
+            "id, full_name, username, avatar_url"
+          )
+          .neq(
+            "id",
+            authUserId
+          )
+          .order(
+            "full_name",
+            {
+              ascending: true,
+            }
+          );
 
       if (error) {
         throw new Error(
@@ -1604,7 +2220,7 @@ export default function ChatPage() {
   ]);
 
   /* ============================================================
-     SEND MESSAGE
+     SEND TEXT MESSAGE
      ============================================================ */
 
   async function sendMessage() {
@@ -1751,16 +2367,22 @@ export default function ChatPage() {
   async function copyMessage(
     content: string
   ) {
-    try {
-      await navigator.clipboard.writeText(
+    const attachment =
+      parseAttachmentContent(
         content
       );
 
-      setOpenMessageMenuId(null);
+    const textToCopy =
+      attachment
+        ? attachment.url
+        : content;
 
-      /*
-       * Tidak menggunakan alert agar UI tidak mengganggu.
-       */
+    try {
+      await navigator.clipboard.writeText(
+        textToCopy
+      );
+
+      setOpenMessageMenuId(null);
     } catch (error) {
       console.error(
         "Copy message error:",
@@ -1774,7 +2396,7 @@ export default function ChatPage() {
   }
 
   /* ============================================================
-     START EDIT MESSAGE
+     START EDIT
      ============================================================ */
 
   function startEditMessage(
@@ -1787,6 +2409,19 @@ export default function ChatPage() {
       return;
     }
 
+    if (
+      parseAttachmentContent(
+        message.content
+      )
+    ) {
+      setErrorMessage(
+        "File atau media tidak dapat diedit."
+      );
+
+      setOpenMessageMenuId(null);
+      return;
+    }
+
     setEditingMessageId(
       message.id
     );
@@ -1795,14 +2430,8 @@ export default function ChatPage() {
       message.content
     );
 
-    setOpenMessageMenuId(
-      null
-    );
+    setOpenMessageMenuId(null);
   }
-
-  /* ============================================================
-     CANCEL EDIT
-     ============================================================ */
 
   function cancelEditMessage() {
     setEditingMessageId(
@@ -1813,7 +2442,7 @@ export default function ChatPage() {
   }
 
   /* ============================================================
-     SAVE EDIT MESSAGE
+     SAVE EDIT
      ============================================================ */
 
   async function saveEditMessage(
@@ -1904,7 +2533,7 @@ export default function ChatPage() {
   }
 
   /* ============================================================
-     DELETE MESSAGE
+     DELETE
      ============================================================ */
 
   async function deleteMessage(
@@ -1999,7 +2628,7 @@ export default function ChatPage() {
   }
 
   /* ============================================================
-     MESSAGE KEYBOARD
+     KEYBOARD
      ============================================================ */
 
   function handleMessageKeyDown(
@@ -2057,19 +2686,14 @@ export default function ChatPage() {
       profile.avatar_url
     );
 
-    setSelectedAvatarFile(
-      null
-    );
+    setSelectedAvatarFile(null);
 
     setAvatarPreview(
       profile.avatar_url
     );
 
     setProfileError("");
-
-    setProfileModalOpen(
-      true
-    );
+    setProfileModalOpen(true);
   }
 
   function closeProfileModal() {
@@ -2115,9 +2739,6 @@ export default function ChatPage() {
 
     setProfileError("");
 
-    /*
-     * Maksimal 5 MB.
-     */
     if (
       file.size >
       5 * 1024 * 1024
@@ -2208,9 +2829,7 @@ export default function ChatPage() {
       );
     }
 
-    const {
-      data,
-    } =
+    const { data } =
       supabase.storage
         .from("avatars")
         .getPublicUrl(
@@ -2260,13 +2879,12 @@ export default function ChatPage() {
     setProfileError("");
 
     try {
-      /*
-       * Cek username hanya jika berubah.
-       */
       if (
         cleanUsername !==
-        (profile.username ||
-          "").toLowerCase()
+        (
+          profile.username ||
+          ""
+        ).toLowerCase()
       ) {
         const {
           data: existingUsername,
@@ -2291,7 +2909,9 @@ export default function ChatPage() {
           );
         }
 
-        if (existingUsername) {
+        if (
+          existingUsername
+        ) {
           throw new Error(
             "Username sudah digunakan."
           );
@@ -2364,10 +2984,6 @@ export default function ChatPage() {
           updatedProfile.avatar_url
         );
 
-        /*
-         * Update daftar pengguna jika
-         * profile ini sedang muncul.
-         */
         setUsers(
           (previous) =>
             previous.map(
@@ -2599,11 +3215,8 @@ export default function ChatPage() {
   /* ============================================================
      LOADING
      
-     PENTING:
-     Tidak ada logo di sini.
-     
-     Login page adalah satu-satunya tempat yang menampilkan
-     logo loading awal.
+     TIDAK ADA LOGO DI SINI.
+     Hanya spinner kecil + teks.
      ============================================================ */
 
   if (loading) {
@@ -2631,11 +3244,17 @@ export default function ChatPage() {
             null
           );
         }
+
+        if (
+          attachmentMenuOpen
+        ) {
+          setAttachmentMenuOpen(
+            false
+          );
+        }
       }}
     >
-      {/* ========================================================
-          HEADER
-          ======================================================== */}
+      {/* HEADER */}
 
       <header className="z-20 shrink-0 border-b border-blue-100 bg-blue-600 shadow-sm">
         <div className="mx-auto flex h-[68px] w-full max-w-7xl items-center justify-between px-4">
@@ -2656,7 +3275,6 @@ export default function ChatPage() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* PROFILE */}
             <button
               type="button"
               onClick={(event) => {
@@ -2714,15 +3332,12 @@ export default function ChatPage() {
         </div>
       </header>
 
-      {/* ========================================================
-          AREA APLIKASI
-          ======================================================== */}
+      {/* AREA APLIKASI */}
 
       <div className="min-h-0 flex-1 overflow-hidden p-0 md:p-3 lg:p-4">
         <div className="mx-auto flex h-full w-full max-w-7xl min-h-0 overflow-hidden bg-white shadow-none md:rounded-2xl md:shadow-xl md:shadow-blue-100/70">
-          {/* ====================================================
-              SIDEBAR
-              ==================================================== */}
+
+          {/* SIDEBAR */}
 
           <aside
             className={`h-full min-h-0 w-full flex-col border-r border-slate-100 bg-white md:flex md:w-80 md:shrink-0 ${
@@ -2800,8 +3415,7 @@ export default function ChatPage() {
                   </p>
 
                   <p className="mt-1 text-xs leading-5 text-slate-400">
-                    Daftar pengguna akan
-                    muncul di sini.
+                    Daftar pengguna akan muncul di sini.
                   </p>
                 </div>
               ) : (
@@ -2899,7 +3513,15 @@ export default function ChatPage() {
 
                               <p className="mt-1 truncate text-xs text-slate-400">
                                 {info?.lastMessage
-                                  ? info.lastMessage
+                                  ? parseAttachmentContent(
+                                      info.lastMessage
+                                    )
+                                    ? getAttachmentLabel(
+                                        parseAttachmentContent(
+                                          info.lastMessage
+                                        )!
+                                      )
+                                    : info.lastMessage
                                   : user.username
                                   ? "@" +
                                     user.username
@@ -2916,9 +3538,7 @@ export default function ChatPage() {
             </div>
           </aside>
 
-          {/* ====================================================
-              CHAT
-              ==================================================== */}
+          {/* CHAT */}
 
           <section
             className={`h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-gradient-to-br from-sky-50 via-white to-blue-50 ${
@@ -2937,14 +3557,12 @@ export default function ChatPage() {
                   </div>
 
                   <h2 className="mt-6 text-2xl font-bold text-slate-800">
-                    Pilih kontak untuk mulai
-                    chat
+                    Pilih kontak untuk mulai chat
                   </h2>
 
                   <p className="mt-3 text-sm leading-6 text-slate-500">
-                    Setiap akun hanya muncul
-                    satu kali. Klik kontak untuk
-                    membuka atau melanjutkan
+                    Setiap akun hanya muncul satu kali.
+                    Klik kontak untuk membuka atau melanjutkan
                     percakapan sebelumnya.
                   </p>
                 </div>
@@ -2952,6 +3570,7 @@ export default function ChatPage() {
             ) : (
               <>
                 {/* CHAT HEADER */}
+
                 <div className="shrink-0 border-b border-slate-100 bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:px-5 sm:py-4">
                   <div className="flex items-center gap-3">
                     <button
@@ -3038,6 +3657,7 @@ export default function ChatPage() {
                 </div>
 
                 {/* PESAN */}
+
                 <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-gradient-to-br from-sky-50/80 via-white to-blue-50/80 px-4 py-5 pb-6 sm:px-5 sm:py-6">
                   {loadingMessages ? (
                     <div className="flex h-full items-center justify-center">
@@ -3062,8 +3682,7 @@ export default function ChatPage() {
                         </h3>
 
                         <p className="mt-2 text-sm text-slate-500">
-                          Kirim pesan pertama
-                          kepada{" "}
+                          Kirim pesan pertama kepada{" "}
                           {
                             selectedUser?.full_name
                           }.
@@ -3082,6 +3701,11 @@ export default function ChatPage() {
                             editingMessageId ===
                             message.id;
 
+                          const attachment =
+                            parseAttachmentContent(
+                              message.content
+                            );
+
                           return (
                             <div
                               key={
@@ -3094,7 +3718,9 @@ export default function ChatPage() {
                               }`}
                             >
                               <div className="relative max-w-[88%] sm:max-w-[75%]">
+
                                 {/* EDIT MODE */}
+
                                 {isEditing ? (
                                   <div className="rounded-2xl border border-blue-200 bg-white p-3 shadow-md">
                                     <textarea
@@ -3105,7 +3731,8 @@ export default function ChatPage() {
                                         event
                                       ) =>
                                         setEditingMessageText(
-                                          event.target
+                                          event
+                                            .target
                                             .value
                                         )
                                       }
@@ -3118,7 +3745,9 @@ export default function ChatPage() {
                                         )
                                       }
                                       autoFocus
-                                      rows={3}
+                                      rows={
+                                        3
+                                      }
                                       className="min-h-[80px] w-full resize-none rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50"
                                     />
 
@@ -3164,11 +3793,18 @@ export default function ChatPage() {
                                           : "rounded-bl-md border border-slate-200 bg-white text-slate-700"
                                       }`}
                                     >
-                                      <p className="whitespace-pre-wrap break-words text-sm leading-6">
-                                        {
-                                          message.content
-                                        }
-                                      </p>
+                                      {attachment ? (
+                                        renderAttachment(
+                                          attachment,
+                                          isMine
+                                        )
+                                      ) : (
+                                        <p className="whitespace-pre-wrap break-words text-sm leading-6">
+                                          {
+                                            message.content
+                                          }
+                                        </p>
+                                      )}
 
                                       <div className="mt-1 flex items-center justify-end gap-1">
                                         <span
@@ -3213,7 +3849,14 @@ export default function ChatPage() {
                                       </div>
                                     </div>
 
-                                    {/* MENU BUTTON */}
+                                    {/* MENU BUTTON
+                                    
+                                    PERBAIKAN HP:
+                                    tidak memakai opacity-0.
+                                    Tombol selalu terlihat sehingga
+                                    touch pada HP bisa membuka menu.
+                                    */}
+
                                     <button
                                       type="button"
                                       onClick={(
@@ -3231,7 +3874,7 @@ export default function ChatPage() {
                                               : message.id
                                         );
                                       }}
-                                      className={`absolute top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-sm text-slate-500 opacity-0 shadow-sm transition group-hover:opacity-100 ${
+                                      className={`absolute top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-sm text-slate-500 shadow-sm transition hover:bg-slate-50 ${
                                         isMine
                                           ? "-left-10"
                                           : "-right-10"
@@ -3242,6 +3885,7 @@ export default function ChatPage() {
                                     </button>
 
                                     {/* MENU */}
+
                                     {openMessageMenuId ===
                                       message.id && (
                                       <div
@@ -3250,7 +3894,7 @@ export default function ChatPage() {
                                         ) =>
                                           event.stopPropagation()
                                         }
-                                        className={`absolute top-full z-40 mt-1 w-32 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl ${
+                                        className={`absolute top-full z-40 mt-2 w-36 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl ${
                                           isMine
                                             ? "right-0"
                                             : "left-0"
@@ -3263,7 +3907,7 @@ export default function ChatPage() {
                                               message.content
                                             )
                                           }
-                                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-slate-600 hover:bg-slate-50 active:bg-slate-100"
                                         >
                                           📋
                                           <span>
@@ -3271,8 +3915,8 @@ export default function ChatPage() {
                                           </span>
                                         </button>
 
-                                        {isMine && (
-                                          <>
+                                        {isMine &&
+                                          !attachment && (
                                             <button
                                               type="button"
                                               onClick={() =>
@@ -3280,36 +3924,37 @@ export default function ChatPage() {
                                                   message
                                                 )
                                               }
-                                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-slate-600 hover:bg-slate-50 active:bg-slate-100"
                                             >
                                               ✏️
                                               <span>
                                                 Edit
                                               </span>
                                             </button>
+                                          )}
 
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                void deleteMessage(
-                                                  message
-                                                )
-                                              }
-                                              disabled={
-                                                deletingMessageId ===
-                                                message.id
-                                              }
-                                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
-                                            >
-                                              🗑️
-                                              <span>
-                                                {deletingMessageId ===
-                                                message.id
-                                                  ? "Menghapus..."
-                                                  : "Hapus"}
-                                              </span>
-                                            </button>
-                                          </>
+                                        {isMine && (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              void deleteMessage(
+                                                message
+                                              )
+                                            }
+                                            disabled={
+                                              deletingMessageId ===
+                                              message.id
+                                            }
+                                            className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50 active:bg-red-100 disabled:opacity-50"
+                                          >
+                                            🗑️
+                                            <span>
+                                              {deletingMessageId ===
+                                              message.id
+                                                ? "Menghapus..."
+                                                : "Hapus"}
+                                            </span>
+                                          </button>
                                         )}
                                       </div>
                                     )}
@@ -3346,52 +3991,404 @@ export default function ChatPage() {
                 </div>
 
                 {/* INPUT */}
+
                 <div className="shrink-0 border-t border-slate-100 bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-4px_15px_rgba(15,23,42,0.03)] sm:p-4">
-                  <div className="mx-auto flex max-w-3xl items-end gap-2 sm:gap-3">
-                    <textarea
-                      value={
-                        messageText
-                      }
-                      onChange={(
-                        event
-                      ) =>
-                        handleMessageChange(
-                          event.target.value
-                        )
-                      }
-                      onKeyDown={
-                        handleMessageKeyDown
-                      }
-                      disabled={
-                        sendingMessage
-                      }
-                      rows={1}
-                      placeholder="Tulis pesan..."
-                      className="max-h-32 min-h-[48px] flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50 disabled:opacity-50"
-                    />
+                  <div className="mx-auto max-w-3xl">
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void sendMessage()
-                      }
-                      disabled={
-                        sendingMessage ||
-                        !messageText.trim()
-                      }
-                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-xl font-bold text-white shadow-md shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      {sendingMessage
-                        ? "..."
-                        : "➤"}
-                    </button>
+                    {/* ATTACHMENT PREVIEW */}
+
+                    {selectedAttachmentFile && (
+                      <div className="mb-3 rounded-2xl border border-blue-100 bg-blue-50 p-3">
+                        <div className="flex items-start gap-3">
+                          {attachmentPreviewUrl &&
+                          attachmentType ===
+                            "image" ? (
+                            <img
+                              src={
+                                attachmentPreviewUrl
+                              }
+                              alt="Preview"
+                              className="h-20 w-20 rounded-xl object-cover"
+                            />
+                          ) : attachmentPreviewUrl &&
+                            attachmentType ===
+                              "video" ? (
+                            <video
+                              src={
+                                attachmentPreviewUrl
+                              }
+                              controls
+                              className="h-20 w-28 rounded-xl object-cover"
+                            />
+                          ) : attachmentPreviewUrl &&
+                            attachmentType ===
+                              "audio" ? (
+                            <div className="flex h-20 w-20 items-center justify-center rounded-xl bg-white text-3xl shadow-sm">
+                              🎙️
+                            </div>
+                          ) : (
+                            <div className="flex h-20 w-20 items-center justify-center rounded-xl bg-white text-3xl shadow-sm">
+                              📎
+                            </div>
+                          )}
+
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-bold text-slate-700">
+                              {
+                                selectedAttachmentFile.name
+                              }
+                            </p>
+
+                            <p className="mt-1 text-xs text-slate-400">
+                              {formatFileSize(
+                                selectedAttachmentFile.size
+                              )}
+                            </p>
+
+                            <p className="mt-1 text-[10px] font-semibold text-blue-500">
+                              {
+                                attachmentType ===
+                                "image"
+                                  ? "Foto"
+                                  : attachmentType ===
+                                    "video"
+                                  ? "Video"
+                                  : attachmentType ===
+                                    "audio"
+                                  ? "Audio"
+                                  : "Dokumen / File"
+                              }
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={
+                              clearAttachmentPreview
+                            }
+                            disabled={
+                              uploadingAttachment
+                            }
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm hover:bg-red-50 hover:text-red-600"
+                            aria-label="Batalkan file"
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void sendAttachment()
+                          }
+                          disabled={
+                            uploadingAttachment
+                          }
+                          className="mt-3 h-11 w-full rounded-xl bg-blue-600 text-sm font-bold text-white shadow-md shadow-blue-600/20 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {uploadingAttachment
+                            ? "Mengunggah..."
+                            : "Kirim File"}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* RECORDING */}
+
+                    {recording && (
+                      <div className="mb-3 flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-3">
+                        <div className="flex h-10 w-10 animate-pulse items-center justify-center rounded-full bg-red-500 text-white">
+                          🎙️
+                        </div>
+
+                        <div className="flex-1">
+                          <p className="text-sm font-bold text-red-700">
+                            Merekam suara
+                          </p>
+
+                          <p className="text-xs text-red-500">
+                            {formatRecordingTime(
+                              recordingSeconds
+                            )}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={
+                            cancelVoiceRecording
+                          }
+                          className="rounded-xl px-3 py-2 text-xs font-bold text-slate-500 hover:bg-white"
+                        >
+                          Batal
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={
+                            stopVoiceRecording
+                          }
+                          className="rounded-xl bg-red-500 px-3 py-2 text-xs font-bold text-white hover:bg-red-600"
+                        >
+                          Selesai
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="relative flex items-end gap-2 sm:gap-3">
+
+                      {/* HIDDEN INPUTS */}
+
+                      <input
+                        ref={
+                          galleryInputRef
+                        }
+                        type="file"
+                        accept="image/*"
+                        onChange={(
+                          event
+                        ) =>
+                          handleAttachmentSelected(
+                            event,
+                            "image"
+                          )
+                        }
+                        className="hidden"
+                      />
+
+                      <input
+                        ref={
+                          videoInputRef
+                        }
+                        type="file"
+                        accept="video/*"
+                        onChange={(
+                          event
+                        ) =>
+                          handleAttachmentSelected(
+                            event,
+                            "video"
+                          )
+                        }
+                        className="hidden"
+                      />
+
+                      <input
+                        ref={
+                          audioInputRef
+                        }
+                        type="file"
+                        accept="audio/*"
+                        onChange={(
+                          event
+                        ) =>
+                          handleAttachmentSelected(
+                            event,
+                            "audio"
+                          )
+                        }
+                        className="hidden"
+                      />
+
+                      <input
+                        ref={
+                          attachmentInputRef
+                        }
+                        type="file"
+                        onChange={(
+                          event
+                        ) =>
+                          handleAttachmentSelected(
+                            event
+                          )
+                        }
+                        className="hidden"
+                      />
+
+                      {/* ATTACHMENT BUTTON */}
+
+                      <div className="relative shrink-0">
+                        <button
+                          type="button"
+                          onClick={(
+                            event
+                          ) => {
+                            event.stopPropagation();
+
+                            if (
+                              recording
+                            ) {
+                              return;
+                            }
+
+                            openAttachmentMenu();
+                          }}
+                          disabled={
+                            uploadingAttachment ||
+                            recording
+                          }
+                          className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-xl text-slate-500 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="Lampiran"
+                        >
+                          📎
+                        </button>
+
+                        {attachmentMenuOpen && (
+                          <div
+                            onClick={(
+                              event
+                            ) =>
+                              event.stopPropagation()
+                            }
+                            className="absolute bottom-14 left-0 z-50 w-52 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl"
+                          >
+                            <button
+                              type="button"
+                              onClick={() =>
+                                chooseAttachment(
+                                  "gallery"
+                                )
+                              }
+                              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-blue-50"
+                            >
+                              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-pink-50 text-lg">
+                                📷
+                              </span>
+
+                              <span>
+                                Galeri / Foto
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                chooseAttachment(
+                                  "video"
+                                )
+                              }
+                              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-blue-50"
+                            >
+                              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-50 text-lg">
+                                🎥
+                              </span>
+
+                              <span>
+                                Video
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                chooseAttachment(
+                                  "audio"
+                                )
+                              }
+                              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-blue-50"
+                            >
+                              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-50 text-lg">
+                                🎵
+                              </span>
+
+                              <span>
+                                Audio / MP3
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                chooseAttachment(
+                                  "file"
+                                )
+                              }
+                              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-blue-50"
+                            >
+                              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange-50 text-lg">
+                                📄
+                              </span>
+
+                              <span>
+                                Dokumen / File
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAttachmentMenuOpen(
+                                  false
+                                );
+                                void startVoiceRecording();
+                              }}
+                              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-blue-50"
+                            >
+                              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-lg">
+                                🎙️
+                              </span>
+
+                              <span>
+                                Rekam Suara
+                              </span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* TEXT INPUT */}
+
+                      <textarea
+                        value={
+                          messageText
+                        }
+                        onChange={(
+                          event
+                        ) =>
+                          handleMessageChange(
+                            event.target.value
+                          )
+                        }
+                        onKeyDown={
+                          handleMessageKeyDown
+                        }
+                        disabled={
+                          sendingMessage ||
+                          uploadingAttachment ||
+                          recording
+                        }
+                        rows={1}
+                        placeholder="Tulis pesan..."
+                        className="max-h-32 min-h-[48px] flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50 disabled:opacity-50"
+                      />
+
+                      {/* SEND */}
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void sendMessage()
+                        }
+                        disabled={
+                          sendingMessage ||
+                          uploadingAttachment ||
+                          recording ||
+                          !messageText.trim()
+                        }
+                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-xl font-bold text-white shadow-md shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {sendingMessage
+                          ? "..."
+                          : "➤"}
+                      </button>
+                    </div>
+
+                    <p className="mx-auto mt-2 hidden max-w-3xl text-[10px] text-slate-400 sm:block">
+                      Enter untuk mengirim ·
+                      Shift + Enter untuk baris baru ·
+                      📎 untuk lampiran
+                    </p>
                   </div>
-
-                  <p className="mx-auto mt-2 hidden max-w-3xl text-[10px] text-slate-400 sm:block">
-                    Enter untuk mengirim ·
-                    Shift + Enter untuk
-                    baris baru
-                  </p>
                 </div>
               </>
             )}
@@ -3399,9 +4396,7 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* ========================================================
-          ERROR
-          ======================================================== */}
+      {/* ERROR */}
 
       {errorMessage && (
         <div className="fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-2xl border border-red-200 bg-white p-4 text-sm text-red-600 shadow-2xl">
@@ -3409,13 +4404,17 @@ export default function ChatPage() {
             <span>⚠️</span>
 
             <p className="flex-1">
-              {errorMessage}
+              {
+                errorMessage
+              }
             </p>
 
             <button
               type="button"
               onClick={() =>
-                setErrorMessage("")
+                setErrorMessage(
+                  ""
+                )
               }
               className="text-red-400 transition hover:text-red-700"
             >
@@ -3425,9 +4424,7 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* ========================================================
-          EDIT PROFILE MODAL
-          ======================================================== */}
+      {/* PROFILE MODAL */}
 
       {profileModalOpen && (
         <div
@@ -3444,7 +4441,6 @@ export default function ChatPage() {
               event.stopPropagation()
             }
           >
-            {/* HEADER */}
             <div className="border-b border-slate-100 px-6 py-5">
               <div className="flex items-center justify-between">
                 <div>
@@ -3453,8 +4449,7 @@ export default function ChatPage() {
                   </h2>
 
                   <p className="mt-1 text-xs text-slate-400">
-                    Ubah nama, username, dan foto
-                    profil.
+                    Ubah nama, username, dan foto profil.
                   </p>
                 </div>
 
@@ -3473,9 +4468,7 @@ export default function ChatPage() {
               </div>
             </div>
 
-            {/* BODY */}
             <div className="p-6">
-              {/* FOTO */}
               <div className="flex flex-col items-center">
                 <div className="relative">
                   {avatarPreview ? (
@@ -3524,8 +4517,8 @@ export default function ChatPage() {
                 </button>
 
                 <p className="mt-1 text-center text-[11px] text-slate-400">
-                  Pilih gambar dari galeri HP atau
-                  komputer. Maksimal 5 MB.
+                  Pilih gambar dari galeri HP atau komputer.
+                  Maksimal 5 MB.
                 </p>
 
                 <input
@@ -3541,15 +4534,15 @@ export default function ChatPage() {
                 />
               </div>
 
-              {/* ERROR PROFILE */}
               {profileError && (
                 <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                   ⚠️{" "}
-                  {profileError}
+                  {
+                    profileError
+                  }
                 </div>
               )}
 
-              {/* NAMA */}
               <div className="mt-6">
                 <label
                   htmlFor="profileName"
@@ -3578,7 +4571,6 @@ export default function ChatPage() {
                 />
               </div>
 
-              {/* USERNAME */}
               <div className="mt-4">
                 <label
                   htmlFor="profileUsername"
@@ -3612,7 +4604,6 @@ export default function ChatPage() {
                 />
               </div>
 
-              {/* BUTTON */}
               <div className="mt-6 flex gap-3">
                 <button
                   type="button"
