@@ -31,6 +31,7 @@ type Conversation = {
 type MessageAttachment = {
   type: "image" | "video" | "audio" | "file";
   url: string;
+  path?: string;
   name: string;
   size: number;
   mimeType: string;
@@ -115,6 +116,8 @@ export default function ChatPage() {
 
   const [attachmentPreviewUrl, setAttachmentPreviewUrl] =
     useState<string | null>(null);
+
+  const [imagePreview, setImagePreview] = useState<MessageAttachment | null>(null);
 
   const [attachmentType, setAttachmentType] =
     useState<MessageAttachment["type"] | null>(null);
@@ -401,7 +404,10 @@ export default function ChatPage() {
       );
     }
 
-    return data.publicUrl;
+    return {
+      url: data.publicUrl,
+      path: filePath,
+    };
   }
 
   async function sendAttachment() {
@@ -444,7 +450,7 @@ export default function ChatPage() {
 
       const file = selectedAttachmentFile;
 
-      const url =
+      const uploaded =
         await uploadChatAttachment(
           file,
           senderId,
@@ -453,7 +459,8 @@ export default function ChatPage() {
 
       const attachment: MessageAttachment = {
         type: attachmentType || "file",
-        url,
+        url: uploaded.url,
+        path: uploaded.path,
         name: file.name,
         size: file.size,
         mimeType: file.type || "application/octet-stream",
@@ -739,6 +746,17 @@ export default function ChatPage() {
     return `${minutes}:${remaining}`;
   }
 
+  function downloadAttachment(attachment: MessageAttachment) {
+    const link = document.createElement("a");
+    link.href = attachment.url;
+    link.download = attachment.name;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
   function renderAttachment(
     attachment: MessageAttachment,
     isMine: boolean
@@ -746,20 +764,31 @@ export default function ChatPage() {
     if (attachment.type === "image") {
       return (
         <div className="overflow-hidden rounded-xl">
-          <img
-            src={attachment.url}
-            alt={attachment.name}
-            className="max-h-[320px] w-full max-w-[320px] rounded-xl object-cover"
-          />
-          <p
-            className={`mt-1 truncate text-[10px] ${
-              isMine
-                ? "text-blue-100"
-                : "text-slate-400"
-            }`}
+          <button
+            type="button"
+            onClick={() => setImagePreview(attachment)}
+            className="block cursor-zoom-in"
+            aria-label={`Lihat detail ${attachment.name}`}
           >
-            {attachment.name}
-          </p>
+            <img
+              src={attachment.url}
+              alt={attachment.name}
+              loading="lazy"
+              className="max-h-[320px] w-full max-w-[320px] rounded-xl object-contain bg-black/5"
+            />
+          </button>
+          <div className="mt-2 flex items-center gap-2">
+            <p className={`min-w-0 flex-1 truncate text-[10px] ${isMine ? "text-blue-100" : "text-slate-400"}`}>
+              {attachment.name}
+            </p>
+            <button
+              type="button"
+              onClick={() => downloadAttachment(attachment)}
+              className={`shrink-0 rounded-lg px-2 py-1 text-[10px] font-bold ${isMine ? "bg-blue-500 text-white hover:bg-blue-400" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+            >
+              Download
+            </button>
+          </div>
         </div>
       );
     }
@@ -768,20 +797,26 @@ export default function ChatPage() {
       return (
         <div>
           <video
-            src={attachment.url}
             controls
             playsInline
-            className="max-h-[320px] max-w-[320px] rounded-xl"
-          />
-          <p
-            className={`mt-1 truncate text-[10px] ${
-              isMine
-                ? "text-blue-100"
-                : "text-slate-400"
-            }`}
+            preload="metadata"
+            className="max-h-[320px] w-full max-w-[420px] rounded-xl bg-black"
           >
-            {attachment.name}
-          </p>
+            <source src={attachment.url} type={attachment.mimeType || undefined} />
+            Browser Anda tidak mendukung pemutaran video ini.
+          </video>
+          <div className="mt-2 flex items-center gap-2">
+            <p className={`min-w-0 flex-1 truncate text-[10px] ${isMine ? "text-blue-100" : "text-slate-400"}`}>
+              {attachment.name}
+            </p>
+            <button
+              type="button"
+              onClick={() => downloadAttachment(attachment)}
+              className={`shrink-0 rounded-lg px-2 py-1 text-[10px] font-bold ${isMine ? "bg-blue-500 text-white hover:bg-blue-400" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+            >
+              Download
+            </button>
+          </div>
         </div>
       );
     }
@@ -789,70 +824,37 @@ export default function ChatPage() {
     if (attachment.type === "audio") {
       return (
         <div className="min-w-[220px] max-w-[300px]">
-          <div
-            className={`mb-2 flex items-center gap-2 text-xs font-semibold ${
-              isMine
-                ? "text-white"
-                : "text-slate-700"
-            }`}
-          >
-            <span className="text-lg">
-              🎙️
-            </span>
-
-            <span className="min-w-0 flex-1 truncate">
-              {attachment.name}
-            </span>
+          <div className={`mb-2 flex items-center gap-2 text-xs font-semibold ${isMine ? "text-white" : "text-slate-700"}`}>
+            <span className="text-lg">🎙️</span>
+            <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
           </div>
-
-          <audio
-            src={attachment.url}
-            controls
-            className="w-full"
-          />
+          <audio src={attachment.url} controls preload="metadata" className="w-full" />
+          <button
+            type="button"
+            onClick={() => downloadAttachment(attachment)}
+            className={`mt-2 w-full rounded-lg px-3 py-2 text-xs font-bold ${isMine ? "bg-blue-500 text-white hover:bg-blue-400" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+          >
+            Download MP3 / Audio
+          </button>
         </div>
       );
     }
 
     return (
-      <a
-        href={attachment.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={`flex max-w-[300px] items-center gap-3 rounded-xl border p-3 transition ${
-          isMine
-            ? "border-blue-400 bg-blue-500 hover:bg-blue-400"
-            : "border-slate-200 bg-slate-50 hover:bg-slate-100"
-        }`}
-      >
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-xl shadow-sm">
-          📎
+      <div className={`flex max-w-[320px] items-center gap-3 rounded-xl border p-3 ${isMine ? "border-blue-400 bg-blue-500" : "border-slate-200 bg-slate-50"}`}>
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-xl shadow-sm">📎</div>
+        <div className="min-w-0 flex-1">
+          <p className={`truncate text-sm font-semibold ${isMine ? "text-white" : "text-slate-700"}`}>{attachment.name}</p>
+          <p className={`mt-0.5 text-[10px] ${isMine ? "text-blue-100" : "text-slate-400"}`}>{formatFileSize(attachment.size)}</p>
         </div>
-
-        <div className="min-w-0">
-          <p
-            className={`truncate text-sm font-semibold ${
-              isMine
-                ? "text-white"
-                : "text-slate-700"
-            }`}
-          >
-            {attachment.name}
-          </p>
-
-          <p
-            className={`mt-0.5 text-[10px] ${
-              isMine
-                ? "text-blue-100"
-                : "text-slate-400"
-            }`}
-          >
-            {formatFileSize(
-              attachment.size
-            )}
-          </p>
-        </div>
-      </a>
+        <button
+          type="button"
+          onClick={() => downloadAttachment(attachment)}
+          className="shrink-0 rounded-lg bg-white px-3 py-2 text-[10px] font-bold text-slate-700 shadow-sm hover:bg-slate-100"
+        >
+          Download
+        </button>
+      </div>
     );
   }
 
@@ -3234,7 +3236,51 @@ export default function ChatPage() {
   }
 
   return (
-    <main
+    <>
+      {imagePreview && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setImagePreview(null)}
+        >
+          <div
+            className="relative flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div className="min-w-0 pr-3">
+                <p className="truncate text-sm font-bold text-slate-800">{imagePreview.name}</p>
+                <p className="text-xs text-slate-400">{formatFileSize(imagePreview.size)}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => downloadAttachment(imagePreview)}
+                  className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700"
+                >
+                  Download
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImagePreview(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  aria-label="Tutup pratinjau gambar"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-slate-950 p-3 sm:p-6">
+              <img
+                src={imagePreview.url}
+                alt={imagePreview.name}
+                className="max-h-[78vh] max-w-full object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      <main
       className="flex min-h-[100dvh] h-[100dvh] flex-col overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100 text-slate-900"
       onClick={() => {
         if (
@@ -3800,9 +3846,23 @@ export default function ChatPage() {
                                         )
                                       ) : (
                                         <p className="whitespace-pre-wrap break-words text-sm leading-6">
-                                          {
-                                            message.content
-                                          }
+                                          {message.content.split(/(https?:\/\/[^\s]+|www\.[^\s]+)/gi).map((part, index) => {
+                                            const isUrl = /^(https?:\/\/|www\.)/i.test(part);
+                                            if (!isUrl) return <span key={index}>{part}</span>;
+                                            const href = part.startsWith("www.") ? `https://${part}` : part;
+                                            return (
+                                              <a
+                                                key={index}
+                                                href={href}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className={`font-semibold underline ${isMine ? "text-sky-200 hover:text-white" : "text-blue-600 hover:text-blue-700"}`}
+                                                onClick={(event) => event.stopPropagation()}
+                                              >
+                                                {part}
+                                              </a>
+                                            );
+                                          })}
                                         </p>
                                       )}
 
@@ -4638,5 +4698,6 @@ export default function ChatPage() {
         </div>
       )}
     </main>
+    </>
   );
 }
