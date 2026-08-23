@@ -50,6 +50,46 @@ type PresenceData = {
   online_at?: string;
 };
 
+/* ============================================================
+   ATTACHMENT
+   Metadata disimpan di kolom content agar tidak perlu
+   mengubah struktur tabel messages yang sudah berhasil.
+   ============================================================ */
+
+type AttachmentType =
+  | "image"
+  | "video"
+  | "audio"
+  | "file";
+
+type AttachmentData = {
+  __banda_attachment: true;
+  type: AttachmentType;
+  url: string;
+  name: string;
+  size: number;
+  mime: string;
+};
+
+type PendingAttachment = {
+  file: File;
+  type: AttachmentType;
+  previewUrl: string | null;
+};
+
+type AttachmentMenuType =
+  | "image"
+  | "video"
+  | "audio"
+  | "file"
+  | null;
+
+type MediaRecorderWithData = {
+  recorder: MediaRecorder;
+  chunks: Blob[];
+  stream: MediaStream;
+};
+
 export default function ChatPage() {
   const router = useRouter();
 
@@ -63,9 +103,7 @@ export default function ChatPage() {
     useState<Profile[]>([]);
 
   const [contactInfo, setContactInfo] =
-    useState<
-      Record<string, ContactInfo>
-    >({});
+    useState<Record<string, ContactInfo>>({});
 
   const [selectedUser, setSelectedUser] =
     useState<Profile | null>(null);
@@ -73,8 +111,7 @@ export default function ChatPage() {
   const [
     selectedConversation,
     setSelectedConversation,
-  ] =
-    useState<Conversation | null>(null);
+  ] = useState<Conversation | null>(null);
 
   const [messages, setMessages] =
     useState<Message[]>([]);
@@ -115,16 +152,12 @@ export default function ChatPage() {
   const [
     onlineUserIds,
     setOnlineUserIds,
-  ] = useState<Set<string>>(
-    new Set()
-  );
+  ] = useState<Set<string>>(new Set());
 
   const [
     typingUserIds,
     setTypingUserIds,
-  ] = useState<Set<string>>(
-    new Set()
-  );
+  ] = useState<Set<string>>(new Set());
 
   /* ============================================================
      MESSAGE MENU
@@ -145,10 +178,8 @@ export default function ChatPage() {
     setEditingMessageText,
   ] = useState("");
 
-  const [
-    savingEdit,
-    setSavingEdit,
-  ] = useState(false);
+  const [savingEdit, setSavingEdit] =
+    useState(false);
 
   const [
     deletingMessageId,
@@ -164,10 +195,8 @@ export default function ChatPage() {
     setProfileModalOpen,
   ] = useState(false);
 
-  const [
-    profileName,
-    setProfileName,
-  ] = useState("");
+  const [profileName, setProfileName] =
+    useState("");
 
   const [
     profileUsername,
@@ -189,55 +218,91 @@ export default function ChatPage() {
     setAvatarPreview,
   ] = useState<string | null>(null);
 
+  const [savingProfile, setSavingProfile] =
+    useState(false);
+
+  const [profileError, setProfileError] =
+    useState("");
+
+  /* ============================================================
+     ATTACHMENT
+     ============================================================ */
+
   const [
-    savingProfile,
-    setSavingProfile,
+    attachmentMenuOpen,
+    setAttachmentMenuOpen,
   ] = useState(false);
 
   const [
-    profileError,
-    setProfileError,
-  ] = useState("");
+    pendingAttachment,
+    setPendingAttachment,
+  ] = useState<PendingAttachment | null>(null);
 
-  const messagesEndRef =
-    useRef<HTMLDivElement | null>(
+  const [
+    uploadingAttachment,
+    setUploadingAttachment,
+  ] = useState(false);
+
+  const [
+    recordingVoice,
+    setRecordingVoice,
+  ] = useState(false);
+
+  const [
+    recordingSeconds,
+    setRecordingSeconds,
+  ] = useState(0);
+
+  const imageInputRef =
+    useRef<HTMLInputElement | null>(null);
+
+  const videoInputRef =
+    useRef<HTMLInputElement | null>(null);
+
+  const audioInputRef =
+    useRef<HTMLInputElement | null>(null);
+
+  const documentInputRef =
+    useRef<HTMLInputElement | null>(null);
+
+  const mediaRecorderRef =
+    useRef<MediaRecorderWithData | null>(null);
+
+  const recordingTimerRef =
+    useRef<ReturnType<typeof setInterval> | null>(
       null
     );
 
+  const messagesEndRef =
+    useRef<HTMLDivElement | null>(null);
+
   const presenceChannelRef =
     useRef<
-      ReturnType<
-        typeof supabase.channel
-      > | null
+      ReturnType<typeof supabase.channel> | null
     >(null);
 
   const typingChannelRef =
     useRef<
-      ReturnType<
-        typeof supabase.channel
-      > | null
+      ReturnType<typeof supabase.channel> | null
     >(null);
 
   const typingTimerRef =
-    useRef<
-      ReturnType<typeof setTimeout> | null
-    >(null);
+    useRef<ReturnType<typeof setTimeout> | null>(
+      null
+    );
 
   const sendTypingTimerRef =
-    useRef<
-      ReturnType<typeof setTimeout> | null
-    >(null);
+    useRef<ReturnType<typeof setTimeout> | null>(
+      null
+    );
 
   const selectedConversationIdRef =
     useRef<string | null>(null);
 
-  const loadingChatRef =
-    useRef(false);
+  const loadingChatRef = useRef(false);
 
   const fileInputRef =
-    useRef<HTMLInputElement | null>(
-      null
-    );
+    useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     selectedConversationIdRef.current =
@@ -259,40 +324,35 @@ export default function ChatPage() {
 
     const {
       data: { subscription },
-    } =
-      supabase.auth.onAuthStateChange(
-        (event, session) => {
-          if (!mounted) {
-            return;
-          }
+    } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (!mounted) {
+          return;
+        }
 
+        if (
+          event === "SIGNED_IN" ||
+          event === "INITIAL_SESSION" ||
+          event === "TOKEN_REFRESHED"
+        ) {
           if (
-            event === "SIGNED_IN" ||
-            event ===
-              "INITIAL_SESSION" ||
-            event ===
-              "TOKEN_REFRESHED"
+            session?.user &&
+            !loadingChatRef.current
           ) {
-            if (
-              session?.user &&
-              !loadingChatRef.current
-            ) {
-              void loadChat();
-            }
-          }
-
-          if (
-            event === "SIGNED_OUT"
-          ) {
-            setCurrentUserId("");
-            setProfile(null);
-            setContactInfo({});
-            setUsers([]);
-
-            router.replace("/login");
+            void loadChat();
           }
         }
-      );
+
+        if (event === "SIGNED_OUT") {
+          setCurrentUserId("");
+          setProfile(null);
+          setContactInfo({});
+          setUsers([]);
+
+          router.replace("/login");
+        }
+      }
+    );
 
     return () => {
       mounted = false;
@@ -314,13 +374,10 @@ export default function ChatPage() {
       const {
         data: { session },
         error: sessionError,
-      } =
-        await supabase.auth.getSession();
+      } = await supabase.auth.getSession();
 
       if (sessionError) {
-        throw new Error(
-          sessionError.message
-        );
+        throw new Error(sessionError.message);
       }
 
       if (!session?.user) {
@@ -328,27 +385,20 @@ export default function ChatPage() {
         return;
       }
 
-      const authUserId =
-        session.user.id;
+      const authUserId = session.user.id;
 
-      setCurrentUserId(
-        authUserId
-      );
+      setCurrentUserId(authUserId);
 
       const {
         data: myProfile,
         error: profileError,
-      } =
-        await supabase
-          .from("profiles")
-          .select(
-            "id, full_name, username, avatar_url"
-          )
-          .eq(
-            "id",
-            authUserId
-          )
-          .maybeSingle();
+      } = await supabase
+        .from("profiles")
+        .select(
+          "id, full_name, username, avatar_url"
+        )
+        .eq("id", authUserId)
+        .maybeSingle();
 
       if (profileError) {
         console.error(
@@ -361,25 +411,16 @@ export default function ChatPage() {
         myProfile || {
           id: authUserId,
           full_name:
-            session.user.email?.split(
-              "@"
-            )[0] ||
+            session.user.email?.split("@")[0] ||
             "Pengguna",
           username: null,
           avatar_url: null,
         };
 
-      setProfile(
-        currentProfile
-      );
+      setProfile(currentProfile);
 
-      await loadUsers(
-        authUserId
-      );
-
-      await loadContactInfo(
-        authUserId
-      );
+      await loadUsers(authUserId);
+      await loadContactInfo(authUserId);
     } catch (error) {
       console.error(
         "Load chat error:",
@@ -393,8 +434,7 @@ export default function ChatPage() {
       );
     } finally {
       setLoading(false);
-      loadingChatRef.current =
-        false;
+      loadingChatRef.current = false;
     }
   }
 
@@ -416,21 +456,13 @@ export default function ChatPage() {
         .select(
           "id, full_name, username, avatar_url"
         )
-        .neq(
-          "id",
-          authUserId
-        )
-        .order(
-          "full_name",
-          {
-            ascending: true,
-          }
-        );
+        .neq("id", authUserId)
+        .order("full_name", {
+          ascending: true,
+        });
 
       if (error) {
-        throw new Error(
-          error.message
-        );
+        throw new Error(error.message);
       }
 
       setUsers(data || []);
@@ -462,18 +494,10 @@ export default function ChatPage() {
       const {
         data: myMemberships,
         error: myMembershipError,
-      } =
-        await supabase
-          .from(
-            "conversation_members"
-          )
-          .select(
-            "conversation_id"
-          )
-          .eq(
-            "user_id",
-            authUserId
-          );
+      } = await supabase
+        .from("conversation_members")
+        .select("conversation_id")
+        .eq("user_id", authUserId);
 
       if (myMembershipError) {
         console.error(
@@ -493,25 +517,21 @@ export default function ChatPage() {
 
       const conversationIds =
         myMemberships.map(
-          (item) =>
-            item.conversation_id
+          (item) => item.conversation_id
         );
 
       const {
         data: allMembers,
         error: allMembersError,
-      } =
-        await supabase
-          .from(
-            "conversation_members"
-          )
-          .select(
-            "conversation_id, user_id"
-          )
-          .in(
-            "conversation_id",
-            conversationIds
-          );
+      } = await supabase
+        .from("conversation_members")
+        .select(
+          "conversation_id, user_id"
+        )
+        .in(
+          "conversation_id",
+          conversationIds
+        );
 
       if (allMembersError) {
         console.error(
@@ -526,39 +546,31 @@ export default function ChatPage() {
         string
       > = {};
 
-      allMembers?.forEach(
-        (member) => {
-          if (
-            member.user_id !==
-            authUserId
-          ) {
-            conversationToUser[
-              member.conversation_id
-            ] =
-              member.user_id;
-          }
+      allMembers?.forEach((member) => {
+        if (
+          member.user_id !== authUserId
+        ) {
+          conversationToUser[
+            member.conversation_id
+          ] = member.user_id;
         }
-      );
+      });
 
       const {
         data: allMessages,
         error: messagesError,
-      } =
-        await supabase
-          .from("messages")
-          .select(
-            "id, conversation_id, sender_id, content, created_at, read_at, updated_at"
-          )
-          .in(
-            "conversation_id",
-            conversationIds
-          )
-          .order(
-            "created_at",
-            {
-              ascending: false,
-            }
-          );
+      } = await supabase
+        .from("messages")
+        .select(
+          "id, conversation_id, sender_id, content, created_at, read_at, updated_at"
+        )
+        .in(
+          "conversation_id",
+          conversationIds
+        )
+        .order("created_at", {
+          ascending: false,
+        });
 
       if (messagesError) {
         console.error(
@@ -578,9 +590,7 @@ export default function ChatPage() {
       ).forEach(
         ([conversationId, userId]) => {
           const conversationMessages =
-            (
-              allMessages || []
-            ).filter(
+            (allMessages || []).filter(
               (message) =>
                 message.conversation_id ===
                 conversationId
@@ -595,19 +605,19 @@ export default function ChatPage() {
             ).length;
 
           const lastMessage =
-            conversationMessages.length >
-            0
+            conversationMessages.length > 0
               ? conversationMessages[0]
               : null;
 
-          if (
-            !aggregatedInfo[userId]
-          ) {
+          if (!aggregatedInfo[userId]) {
             aggregatedInfo[userId] = {
               conversationId,
               lastMessage:
-                lastMessage?.content ||
-                null,
+                lastMessage
+                  ? getMessagePreviewText(
+                      lastMessage.content
+                    )
+                  : null,
               lastMessageAt:
                 lastMessage?.created_at ||
                 null,
@@ -624,11 +634,9 @@ export default function ChatPage() {
             existing.lastMessageAt;
 
           const currentLastMessageAt =
-            lastMessage?.created_at ||
-            null;
+            lastMessage?.created_at || null;
 
-          existing.unreadCount +=
-            unreadCount;
+          existing.unreadCount += unreadCount;
 
           if (
             currentLastMessageAt &&
@@ -644,8 +652,11 @@ export default function ChatPage() {
               conversationId;
 
             existing.lastMessage =
-              lastMessage?.content ||
-              null;
+              lastMessage
+                ? getMessagePreviewText(
+                    lastMessage.content
+                  )
+                : null;
 
             existing.lastMessageAt =
               currentLastMessageAt;
@@ -653,9 +664,7 @@ export default function ChatPage() {
         }
       );
 
-      setContactInfo(
-        aggregatedInfo
-      );
+      setContactInfo(aggregatedInfo);
     } catch (error) {
       console.error(
         "Load contact info error:",
@@ -669,14 +678,10 @@ export default function ChatPage() {
       return;
     }
 
-    void loadContactInfo(
-      currentUserId
-    );
+    void loadContactInfo(currentUserId);
 
     window.setTimeout(() => {
-      void loadContactInfo(
-        currentUserId
-      );
+      void loadContactInfo(currentUserId);
     }, 300);
   }
 
@@ -689,17 +694,16 @@ export default function ChatPage() {
       return;
     }
 
-    const channel =
-      supabase.channel(
-        "banda-chat-online",
-        {
-          config: {
-            presence: {
-              key: currentUserId,
-            },
+    const channel = supabase.channel(
+      "banda-chat-online",
+      {
+        config: {
+          presence: {
+            key: currentUserId,
           },
-        }
-      );
+        },
+      }
+    );
 
     presenceChannelRef.current =
       channel;
@@ -725,9 +729,7 @@ export default function ChatPage() {
               state[key];
 
             if (
-              !Array.isArray(
-                presences
-              )
+              !Array.isArray(presences)
             ) {
               return;
             }
@@ -749,22 +751,18 @@ export default function ChatPage() {
           }
         );
 
-        setOnlineUserIds(
-          onlineIds
-        );
+        setOnlineUserIds(onlineIds);
       }
     );
 
     channel.subscribe(
       async (status) => {
         if (
-          status ===
-          "SUBSCRIBED"
+          status === "SUBSCRIBED"
         ) {
           try {
             await channel.track({
-              user_id:
-                currentUserId,
+              user_id: currentUserId,
               online_at:
                 new Date().toISOString(),
             });
@@ -941,8 +939,7 @@ export default function ChatPage() {
         type: "broadcast",
         event: "typing",
         payload: {
-          user_id:
-            currentUserId,
+          user_id: currentUserId,
           conversation_id:
             selectedConversation.id,
           is_typing: true,
@@ -984,8 +981,7 @@ export default function ChatPage() {
         type: "broadcast",
         event: "typing",
         payload: {
-          user_id:
-            currentUserId,
+          user_id: currentUserId,
           conversation_id:
             selectedConversation.id,
           is_typing: false,
@@ -1019,8 +1015,7 @@ export default function ChatPage() {
     try {
       const {
         data: { session },
-      } =
-        await supabase.auth.getSession();
+      } = await supabase.auth.getSession();
 
       if (!session?.user) {
         router.replace("/login");
@@ -1031,8 +1026,7 @@ export default function ChatPage() {
         session.user.id;
 
       if (
-        authUserId ===
-        user.id
+        authUserId === user.id
       ) {
         throw new Error(
           "Anda tidak dapat chat dengan diri sendiri."
@@ -1042,14 +1036,13 @@ export default function ChatPage() {
       const {
         data: conversationId,
         error: rpcError,
-      } =
-        await supabase.rpc(
-          "create_direct_conversation",
-          {
-            target_user_id:
-              user.id,
-          }
-        );
+      } = await supabase.rpc(
+        "create_direct_conversation",
+        {
+          target_user_id:
+            user.id,
+        }
+      );
 
       if (rpcError) {
         throw new Error(
@@ -1121,22 +1114,18 @@ export default function ChatPage() {
       const {
         data,
         error,
-      } =
-        await supabase
-          .from("messages")
-          .select(
-            "id, conversation_id, sender_id, content, created_at, read_at, updated_at"
-          )
-          .eq(
-            "conversation_id",
-            conversationId
-          )
-          .order(
-            "created_at",
-            {
-              ascending: true,
-            }
-          );
+      } = await supabase
+        .from("messages")
+        .select(
+          "id, conversation_id, sender_id, content, created_at, read_at, updated_at"
+        )
+        .eq(
+          "conversation_id",
+          conversationId
+        )
+        .order("created_at", {
+          ascending: true,
+        });
 
       if (error) {
         throw new Error(
@@ -1176,14 +1165,13 @@ export default function ChatPage() {
     try {
       const {
         error,
-      } =
-        await supabase.rpc(
-          "mark_conversation_read",
-          {
-            p_conversation_id:
-              conversationId,
-          }
-        );
+      } = await supabase.rpc(
+        "mark_conversation_read",
+        {
+          p_conversation_id:
+            conversationId,
+        }
+      );
 
       if (error) {
         console.error(
@@ -1327,7 +1315,9 @@ export default function ChatPage() {
                       matchedUserId
                     ],
                     lastMessage:
-                      newMessage.content,
+                      getMessagePreviewText(
+                        newMessage.content
+                      ),
                     lastMessageAt:
                       newMessage.created_at,
                     unreadCount:
@@ -1494,7 +1484,9 @@ export default function ChatPage() {
                           ],
                           unreadCount: 0,
                           lastMessage:
-                            newMessage.content,
+                            getMessagePreviewText(
+                              newMessage.content
+                            ),
                           lastMessageAt:
                             newMessage.created_at,
                         };
@@ -1592,12 +1584,10 @@ export default function ChatPage() {
      ============================================================ */
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView(
-      {
-        behavior: "smooth",
-        block: "end",
-      }
-    );
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    });
   }, [
     messages,
     typingUserIds,
@@ -1636,37 +1626,12 @@ export default function ChatPage() {
     setSendingMessage(true);
     setErrorMessage("");
 
-    if (
-      sendTypingTimerRef.current
-    ) {
-      clearTimeout(
-        sendTypingTimerRef.current
-      );
-    }
-
-    if (
-      typingChannelRef.current
-    ) {
-      void typingChannelRef.current.send(
-        {
-          type: "broadcast",
-          event: "typing",
-          payload: {
-            user_id:
-              currentUserId,
-            conversation_id:
-              selectedConversation.id,
-            is_typing: false,
-          },
-        }
-      );
-    }
+    stopTypingBroadcast();
 
     try {
       const {
         data: { session },
-      } =
-        await supabase.auth.getSession();
+      } = await supabase.auth.getSession();
 
       if (!session?.user) {
         router.replace("/login");
@@ -1679,20 +1644,19 @@ export default function ChatPage() {
       const {
         data,
         error,
-      } =
-        await supabase
-          .from("messages")
-          .insert({
-            conversation_id:
-              selectedConversation.id,
-            sender_id:
-              senderId,
-            content,
-          })
-          .select(
-            "id, conversation_id, sender_id, content, created_at, read_at, updated_at"
-          )
-          .single();
+      } = await supabase
+        .from("messages")
+        .insert({
+          conversation_id:
+            selectedConversation.id,
+          sender_id:
+            senderId,
+          content,
+        })
+        .select(
+          "id, conversation_id, sender_id, content, created_at, read_at, updated_at"
+        )
+        .single();
 
       if (error) {
         throw new Error(
@@ -1744,6 +1708,893 @@ export default function ChatPage() {
     }
   }
 
+  function stopTypingBroadcast() {
+    if (
+      sendTypingTimerRef.current
+    ) {
+      clearTimeout(
+        sendTypingTimerRef.current
+      );
+    }
+
+    if (
+      typingChannelRef.current &&
+      selectedConversation &&
+      currentUserId
+    ) {
+      void typingChannelRef.current.send(
+        {
+          type: "broadcast",
+          event: "typing",
+          payload: {
+            user_id:
+              currentUserId,
+            conversation_id:
+              selectedConversation.id,
+            is_typing: false,
+          },
+        }
+      );
+    }
+  }
+
+  /* ============================================================
+     ATTACHMENT HELPERS
+     ============================================================ */
+
+  function parseAttachment(
+    content: string
+  ): AttachmentData | null {
+    try {
+      const parsed =
+        JSON.parse(content);
+
+      if (
+        parsed &&
+        parsed.__banda_attachment ===
+          true &&
+        typeof parsed.url ===
+          "string" &&
+        typeof parsed.name ===
+          "string" &&
+        typeof parsed.type ===
+          "string"
+      ) {
+        return parsed as AttachmentData;
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  function getMessagePreviewText(
+    content: string
+  ) {
+    const attachment =
+      parseAttachment(content);
+
+    if (!attachment) {
+      return content;
+    }
+
+    if (
+      attachment.type ===
+      "image"
+    ) {
+      return "📷 Foto";
+    }
+
+    if (
+      attachment.type ===
+      "video"
+    ) {
+      return "🎥 Video";
+    }
+
+    if (
+      attachment.type ===
+      "audio"
+    ) {
+      return "🎵 Audio";
+    }
+
+    return (
+      "📎 " + attachment.name
+    );
+  }
+
+  function getAttachmentType(
+    file: File
+  ): AttachmentType {
+    if (
+      file.type.startsWith(
+        "image/"
+      )
+    ) {
+      return "image";
+    }
+
+    if (
+      file.type.startsWith(
+        "video/"
+      )
+    ) {
+      return "video";
+    }
+
+    if (
+      file.type.startsWith(
+        "audio/"
+      )
+    ) {
+      return "audio";
+    }
+
+    return "file";
+  }
+
+  function formatFileSize(
+    size: number
+  ) {
+    if (size < 1024) {
+      return `${size} B`;
+    }
+
+    if (size < 1024 * 1024) {
+      return `${(
+        size / 1024
+      ).toFixed(1)} KB`;
+    }
+
+    if (
+      size <
+      1024 * 1024 * 1024
+    ) {
+      return `${(
+        size /
+        (1024 * 1024)
+      ).toFixed(1)} MB`;
+    }
+
+    return `${(
+      size /
+      (1024 *
+        1024 *
+        1024)
+    ).toFixed(1)} GB`;
+  }
+
+  function getMaxFileSize(
+    type: AttachmentType
+  ) {
+    if (
+      type === "video"
+    ) {
+      return 100 * 1024 * 1024;
+    }
+
+    if (
+      type === "audio"
+    ) {
+      return 50 * 1024 * 1024;
+    }
+
+    if (
+      type === "image"
+    ) {
+      return 20 * 1024 * 1024;
+    }
+
+    return 50 * 1024 * 1024;
+  }
+
+  function handleAttachmentFile(
+    event: ChangeEvent<HTMLInputElement>,
+    forcedType?: AttachmentType
+  ) {
+    const file =
+      event.target.files?.[0];
+
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    const type =
+      forcedType ||
+      getAttachmentType(file);
+
+    const maxSize =
+      getMaxFileSize(type);
+
+    if (
+      file.size > maxSize
+    ) {
+      setErrorMessage(
+        `Ukuran ${
+          type === "video"
+            ? "video"
+            : type === "audio"
+            ? "audio"
+            : type === "image"
+            ? "foto"
+            : "file"
+        } maksimal ${formatFileSize(
+          maxSize
+        )}.`
+      );
+      return;
+    }
+
+    let previewUrl: string | null =
+      null;
+
+    if (
+      type === "image" ||
+      type === "video" ||
+      type === "audio"
+    ) {
+      previewUrl =
+        URL.createObjectURL(
+          file
+        );
+    }
+
+    setPendingAttachment({
+      file,
+      type,
+      previewUrl,
+    });
+
+    setAttachmentMenuOpen(
+      false
+    );
+
+    setErrorMessage("");
+  }
+
+  function cancelPendingAttachment() {
+    if (
+      pendingAttachment?.previewUrl
+    ) {
+      URL.revokeObjectURL(
+        pendingAttachment.previewUrl
+      );
+    }
+
+    setPendingAttachment(
+      null
+    );
+  }
+
+  async function uploadChatAttachment(
+    file: File,
+    userId: string,
+    conversationId: string
+  ) {
+    const extension =
+      file.name
+        .split(".")
+        .pop()
+        ?.toLowerCase() ||
+      "bin";
+
+    const safeName =
+      file.name
+        .replace(
+          /[^a-zA-Z0-9._-]/g,
+          "_"
+        )
+        .slice(0, 120);
+
+    const filePath =
+      userId +
+      "/" +
+      conversationId +
+      "/" +
+      Date.now() +
+      "-" +
+      safeName +
+      "." +
+      extension;
+
+    const {
+      error: uploadError,
+    } =
+      await supabase.storage
+        .from(
+          "chat-attachments"
+        )
+        .upload(
+          filePath,
+          file,
+          {
+            cacheControl:
+              "3600",
+            upsert: false,
+            contentType:
+              file.type ||
+              "application/octet-stream",
+          }
+        );
+
+    if (uploadError) {
+      throw new Error(
+        "Upload lampiran gagal: " +
+          uploadError.message
+      );
+    }
+
+    const {
+      data,
+    } =
+      supabase.storage
+        .from(
+          "chat-attachments"
+        )
+        .getPublicUrl(
+          filePath
+        );
+
+    if (
+      !data.publicUrl
+    ) {
+      throw new Error(
+        "URL lampiran tidak ditemukan."
+      );
+    }
+
+    return data.publicUrl;
+  }
+
+  async function sendAttachment() {
+    if (
+      !pendingAttachment ||
+      !selectedConversation ||
+      !currentUserId
+    ) {
+      return;
+    }
+
+    if (
+      uploadingAttachment
+    ) {
+      return;
+    }
+
+    setUploadingAttachment(
+      true
+    );
+    setErrorMessage("");
+
+    try {
+      const {
+        data: { session },
+      } =
+        await supabase.auth.getSession();
+
+      if (!session?.user) {
+        router.replace(
+          "/login"
+        );
+        return;
+      }
+
+      const senderId =
+        session.user.id;
+
+      const url =
+        await uploadChatAttachment(
+          pendingAttachment.file,
+          senderId,
+          selectedConversation.id
+        );
+
+      const attachment:
+        AttachmentData = {
+        __banda_attachment:
+          true,
+        type:
+          pendingAttachment.type,
+        url,
+        name:
+          pendingAttachment.file
+            .name,
+        size:
+          pendingAttachment.file
+            .size,
+        mime:
+          pendingAttachment.file
+            .type ||
+          "application/octet-stream",
+      };
+
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("messages")
+        .insert({
+          conversation_id:
+            selectedConversation.id,
+          sender_id:
+            senderId,
+          content:
+            JSON.stringify(
+              attachment
+            ),
+        })
+        .select(
+          "id, conversation_id, sender_id, content, created_at, read_at, updated_at"
+        )
+        .single();
+
+      if (error) {
+        throw new Error(
+          error.message
+        );
+      }
+
+      if (data) {
+        setMessages(
+          (previous) => {
+            const exists =
+              previous.some(
+                (message) =>
+                  message.id ===
+                  data.id
+              );
+
+            if (exists) {
+              return previous;
+            }
+
+            return [
+              ...previous,
+              data,
+            ];
+          }
+        );
+      }
+
+      cancelPendingAttachment();
+
+      await loadContactInfo(
+        senderId
+      );
+    } catch (error) {
+      console.error(
+        "Send attachment error:",
+        error
+      );
+
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Lampiran gagal dikirim."
+      );
+    } finally {
+      setUploadingAttachment(
+        false
+      );
+    }
+  }
+
+  async function startVoiceRecording() {
+    if (
+      recordingVoice ||
+      uploadingAttachment
+    ) {
+      return;
+    }
+
+    if (
+      !navigator.mediaDevices ||
+      !navigator.mediaDevices.getUserMedia
+    ) {
+      setErrorMessage(
+        "Browser ini tidak mendukung rekaman suara."
+      );
+      return;
+    }
+
+    try {
+      const stream =
+        await navigator.mediaDevices.getUserMedia(
+          {
+            audio: true,
+          }
+        );
+
+      let mimeType = "";
+
+      const possibleTypes = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/mp4",
+      ];
+
+      for (
+        const type of possibleTypes
+      ) {
+        if (
+          MediaRecorder.isTypeSupported(
+            type
+          )
+        ) {
+          mimeType = type;
+          break;
+        }
+      }
+
+      const recorder =
+        mimeType
+          ? new MediaRecorder(
+              stream,
+              {
+                mimeType,
+              }
+            )
+          : new MediaRecorder(
+              stream
+            );
+
+      const chunks: Blob[] = [];
+
+      mediaRecorderRef.current = {
+        recorder,
+        chunks,
+        stream,
+      };
+
+      recorder.ondataavailable =
+        (event) => {
+          if (
+            event.data &&
+            event.data.size > 0
+          ) {
+            chunks.push(
+              event.data
+            );
+          }
+        };
+
+      recorder.onstop =
+        () => {
+          const actualType =
+            recorder.mimeType ||
+            "audio/webm";
+
+          const extension =
+            actualType.includes(
+              "mp4"
+            )
+              ? "m4a"
+              : "webm";
+
+          const blob =
+            new Blob(
+              chunks,
+              {
+                type:
+                  actualType,
+              }
+            );
+
+          const file =
+            new File(
+              [
+                blob,
+              ],
+              `rekaman-${Date.now()}.${extension}`,
+              {
+                type:
+                  actualType,
+              }
+            );
+
+          const previewUrl =
+            URL.createObjectURL(
+              file
+            );
+
+          setPendingAttachment({
+            file,
+            type: "audio",
+            previewUrl,
+          });
+
+          stream
+            .getTracks()
+            .forEach(
+              (track) =>
+                track.stop()
+            );
+
+          mediaRecorderRef.current =
+            null;
+          setRecordingVoice(
+            false
+          );
+
+          if (
+            recordingTimerRef.current
+          ) {
+            clearInterval(
+              recordingTimerRef.current
+            );
+
+            recordingTimerRef.current =
+              null;
+          }
+        };
+
+      recorder.start();
+
+      setRecordingSeconds(
+        0
+      );
+      setRecordingVoice(
+        true
+      );
+      setAttachmentMenuOpen(
+        false
+      );
+
+      recordingTimerRef.current =
+        setInterval(() => {
+          setRecordingSeconds(
+            (previous) =>
+              previous + 1
+          );
+        }, 1000);
+    } catch (error) {
+      console.error(
+        "Start recording error:",
+        error
+      );
+
+      setErrorMessage(
+        "Microphone tidak dapat digunakan. Pastikan izin microphone diberikan."
+      );
+    }
+  }
+
+  function stopVoiceRecording() {
+    const current =
+      mediaRecorderRef.current;
+
+    if (!current) {
+      return;
+    }
+
+    if (
+      current.recorder.state !==
+      "inactive"
+    ) {
+      current.recorder.stop();
+    }
+
+    if (
+      recordingTimerRef.current
+    ) {
+      clearInterval(
+        recordingTimerRef.current
+      );
+
+      recordingTimerRef.current =
+        null;
+    }
+  }
+
+  function formatRecordingTime(
+    seconds: number
+  ) {
+    const minutes =
+      Math.floor(
+        seconds / 60
+      );
+
+    const remaining =
+      seconds % 60;
+
+    return (
+      String(minutes).padStart(
+        2,
+        "0"
+      ) +
+      ":" +
+      String(
+        remaining
+      ).padStart(2, "0")
+    );
+  }
+
+  /* ============================================================
+     ATTACHMENT RENDER
+     ============================================================ */
+
+  function renderAttachment(
+    attachment: AttachmentData,
+    isMine: boolean
+  ) {
+    if (
+      attachment.type ===
+      "image"
+    ) {
+      return (
+        <a
+          href={
+            attachment.url
+          }
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block overflow-hidden rounded-xl"
+          onClick={(event) =>
+            event.stopPropagation()
+          }
+        >
+          <img
+            src={
+              attachment.url
+            }
+            alt={
+              attachment.name
+            }
+            className="max-h-[360px] w-full max-w-[300px] rounded-xl object-cover"
+          />
+
+          <div
+            className={`mt-2 text-xs ${
+              isMine
+                ? "text-blue-100"
+                : "text-slate-400"
+            }`}
+          >
+            {attachment.name}
+          </div>
+        </a>
+      );
+    }
+
+    if (
+      attachment.type ===
+      "video"
+    ) {
+      return (
+        <div>
+          <video
+            src={
+              attachment.url
+            }
+            controls
+            playsInline
+            className="max-h-[360px] w-full max-w-[340px] rounded-xl"
+          />
+
+          <p
+            className={`mt-2 text-xs ${
+              isMine
+                ? "text-blue-100"
+                : "text-slate-400"
+            }`}
+          >
+            {attachment.name}
+          </p>
+        </div>
+      );
+    }
+
+    if (
+      attachment.type ===
+      "audio"
+    ) {
+      return (
+        <div className="min-w-[230px]">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="text-xl">
+              🎵
+            </span>
+
+            <div className="min-w-0">
+              <p
+                className={`truncate text-xs font-semibold ${
+                  isMine
+                    ? "text-white"
+                    : "text-slate-700"
+                }`}
+              >
+                {attachment.name}
+              </p>
+
+              <p
+                className={`text-[10px] ${
+                  isMine
+                    ? "text-blue-100"
+                    : "text-slate-400"
+                }`}
+              >
+                {formatFileSize(
+                  attachment.size
+                )}
+              </p>
+            </div>
+          </div>
+
+          <audio
+            src={
+              attachment.url
+            }
+            controls
+            className="w-full"
+          />
+        </div>
+      );
+    }
+
+    return (
+      <a
+        href={
+          attachment.url
+        }
+        target="_blank"
+        rel="noopener noreferrer"
+        download={
+          attachment.name
+        }
+        className={`flex min-w-[220px] items-center gap-3 rounded-xl p-3 transition ${
+          isMine
+            ? "bg-blue-700/70 hover:bg-blue-700"
+            : "bg-slate-50 hover:bg-slate-100"
+        }`}
+        onClick={(event) =>
+          event.stopPropagation()
+        }
+      >
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-100 text-xl">
+          📄
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p
+            className={`truncate text-sm font-semibold ${
+              isMine
+                ? "text-white"
+                : "text-slate-700"
+            }`}
+          >
+            {attachment.name}
+          </p>
+
+          <p
+            className={`mt-1 text-[10px] ${
+              isMine
+                ? "text-blue-100"
+                : "text-slate-400"
+            }`}
+          >
+            {formatFileSize(
+              attachment.size
+            )}
+          </p>
+        </div>
+
+        <span
+          className={
+            isMine
+              ? "text-white"
+              : "text-blue-600"
+          }
+        >
+          ↓
+        </span>
+      </a>
+    );
+  }
+
   /* ============================================================
      COPY MESSAGE
      ============================================================ */
@@ -1752,15 +2603,23 @@ export default function ChatPage() {
     content: string
   ) {
     try {
+      const attachment =
+        parseAttachment(
+          content
+        );
+
+      const textToCopy =
+        attachment
+          ? attachment.url
+          : content;
+
       await navigator.clipboard.writeText(
-        content
+        textToCopy
       );
 
-      setOpenMessageMenuId(null);
-
-      /*
-       * Tidak menggunakan alert agar UI tidak mengganggu.
-       */
+      setOpenMessageMenuId(
+        null
+      );
     } catch (error) {
       console.error(
         "Copy message error:",
@@ -1787,6 +2646,22 @@ export default function ChatPage() {
       return;
     }
 
+    if (
+      parseAttachment(
+        message.content
+      )
+    ) {
+      setOpenMessageMenuId(
+        null
+      );
+
+      setErrorMessage(
+        "Lampiran tidak dapat diedit."
+      );
+
+      return;
+    }
+
     setEditingMessageId(
       message.id
     );
@@ -1809,7 +2684,9 @@ export default function ChatPage() {
       null
     );
 
-    setEditingMessageText("");
+    setEditingMessageText(
+      ""
+    );
   }
 
   /* ============================================================
@@ -1843,24 +2720,23 @@ export default function ChatPage() {
       const {
         data,
         error,
-      } =
-        await supabase
-          .from("messages")
-          .update({
-            content,
-          })
-          .eq(
-            "id",
-            messageId
-          )
-          .eq(
-            "sender_id",
-            currentUserId
-          )
-          .select(
-            "id, conversation_id, sender_id, content, created_at, read_at, updated_at"
-          )
-          .single();
+      } = await supabase
+        .from("messages")
+        .update({
+          content,
+        })
+        .eq(
+          "id",
+          messageId
+        )
+        .eq(
+          "sender_id",
+          currentUserId
+        )
+        .select(
+          "id, conversation_id, sender_id, content, created_at, read_at, updated_at"
+        )
+        .single();
 
       if (error) {
         throw new Error(
@@ -1946,20 +2822,24 @@ export default function ChatPage() {
     setErrorMessage("");
 
     try {
+      const attachment =
+        parseAttachment(
+          message.content
+        );
+
       const {
         error,
-      } =
-        await supabase
-          .from("messages")
-          .delete()
-          .eq(
-            "id",
-            message.id
-          )
-          .eq(
-            "sender_id",
-            currentUserId
-          );
+      } = await supabase
+        .from("messages")
+        .delete()
+        .eq(
+          "id",
+          message.id
+        )
+        .eq(
+          "sender_id",
+          currentUserId
+        );
 
       if (error) {
         throw new Error(
@@ -1975,6 +2855,13 @@ export default function ChatPage() {
               message.id
           )
       );
+
+      /*
+       * Pesan dihapus terlebih dahulu.
+       * File Storage sengaja tidak langsung dihapus agar
+       * tidak gagal hanya karena policy Storage berbeda.
+       */
+      void attachment;
 
       await loadContactInfo(
         currentUserId
@@ -2115,9 +3002,6 @@ export default function ChatPage() {
 
     setProfileError("");
 
-    /*
-     * Maksimal 5 MB.
-     */
     if (
       file.size >
       5 * 1024 * 1024
@@ -2126,7 +3010,8 @@ export default function ChatPage() {
         "Ukuran foto maksimal 5 MB."
       );
 
-      event.target.value = "";
+      event.target.value =
+        "";
       return;
     }
 
@@ -2139,7 +3024,8 @@ export default function ChatPage() {
         "File harus berupa gambar."
       );
 
-      event.target.value = "";
+      event.target.value =
+        "";
       return;
     }
 
@@ -2217,7 +3103,9 @@ export default function ChatPage() {
           filePath
         );
 
-    if (!data.publicUrl) {
+    if (
+      !data.publicUrl
+    ) {
       throw new Error(
         "URL foto profil tidak ditemukan."
       );
@@ -2260,13 +3148,12 @@ export default function ChatPage() {
     setProfileError("");
 
     try {
-      /*
-       * Cek username hanya jika berubah.
-       */
       if (
         cleanUsername !==
-        (profile.username ||
-          "").toLowerCase()
+        (
+          profile.username ||
+          ""
+        ).toLowerCase()
       ) {
         const {
           data: existingUsername,
@@ -2291,7 +3178,9 @@ export default function ChatPage() {
           );
         }
 
-        if (existingUsername) {
+        if (
+          existingUsername
+        ) {
           throw new Error(
             "Username sudah digunakan."
           );
@@ -2364,10 +3253,6 @@ export default function ChatPage() {
           updatedProfile.avatar_url
         );
 
-        /*
-         * Update daftar pengguna jika
-         * profile ini sedang muncul.
-         */
         setUsers(
           (previous) =>
             previous.map(
@@ -2536,23 +3421,7 @@ export default function ChatPage() {
       selectedConversation &&
       currentUserId
     ) {
-      if (
-        typingChannelRef.current
-      ) {
-        void typingChannelRef.current.send(
-          {
-            type: "broadcast",
-            event: "typing",
-            payload: {
-              user_id:
-                currentUserId,
-              conversation_id:
-                selectedConversation.id,
-              is_typing: false,
-            },
-          }
-        );
-      }
+      stopTypingBroadcast();
     }
 
     try {
@@ -2566,6 +3435,10 @@ export default function ChatPage() {
         "Presence untrack error:",
         error
       );
+    }
+
+    if (recordingVoice) {
+      stopVoiceRecording();
     }
 
     const {
@@ -2598,12 +3471,8 @@ export default function ChatPage() {
 
   /* ============================================================
      LOADING
-     
-     PENTING:
-     Tidak ada logo di sini.
-     
-     Login page adalah satu-satunya tempat yang menampilkan
-     logo loading awal.
+
+     TIDAK ADA LOGO DI SINI.
      ============================================================ */
 
   if (loading) {
@@ -2629,6 +3498,14 @@ export default function ChatPage() {
         ) {
           setOpenMessageMenuId(
             null
+          );
+        }
+
+        if (
+          attachmentMenuOpen
+        ) {
+          setAttachmentMenuOpen(
+            false
           );
         }
       }}
@@ -2952,6 +3829,7 @@ export default function ChatPage() {
             ) : (
               <>
                 {/* CHAT HEADER */}
+
                 <div className="shrink-0 border-b border-slate-100 bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:px-5 sm:py-4">
                   <div className="flex items-center gap-3">
                     <button
@@ -3038,6 +3916,7 @@ export default function ChatPage() {
                 </div>
 
                 {/* PESAN */}
+
                 <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-gradient-to-br from-sky-50/80 via-white to-blue-50/80 px-4 py-5 pb-6 sm:px-5 sm:py-6">
                   {loadingMessages ? (
                     <div className="flex h-full items-center justify-center">
@@ -3082,6 +3961,11 @@ export default function ChatPage() {
                             editingMessageId ===
                             message.id;
 
+                          const attachment =
+                            parseAttachment(
+                              message.content
+                            );
+
                           return (
                             <div
                               key={
@@ -3095,6 +3979,7 @@ export default function ChatPage() {
                             >
                               <div className="relative max-w-[88%] sm:max-w-[75%]">
                                 {/* EDIT MODE */}
+
                                 {isEditing ? (
                                   <div className="rounded-2xl border border-blue-200 bg-white p-3 shadow-md">
                                     <textarea
@@ -3118,7 +4003,9 @@ export default function ChatPage() {
                                         )
                                       }
                                       autoFocus
-                                      rows={3}
+                                      rows={
+                                        3
+                                      }
                                       className="min-h-[80px] w-full resize-none rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800 outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50"
                                     />
 
@@ -3164,11 +4051,18 @@ export default function ChatPage() {
                                           : "rounded-bl-md border border-slate-200 bg-white text-slate-700"
                                       }`}
                                     >
-                                      <p className="whitespace-pre-wrap break-words text-sm leading-6">
-                                        {
-                                          message.content
-                                        }
-                                      </p>
+                                      {attachment ? (
+                                        renderAttachment(
+                                          attachment,
+                                          isMine
+                                        )
+                                      ) : (
+                                        <p className="whitespace-pre-wrap break-words text-sm leading-6">
+                                          {
+                                            message.content
+                                          }
+                                        </p>
+                                      )}
 
                                       <div className="mt-1 flex items-center justify-end gap-1">
                                         <span
@@ -3214,6 +4108,7 @@ export default function ChatPage() {
                                     </div>
 
                                     {/* MENU BUTTON */}
+
                                     <button
                                       type="button"
                                       onClick={(
@@ -3242,6 +4137,7 @@ export default function ChatPage() {
                                     </button>
 
                                     {/* MENU */}
+
                                     {openMessageMenuId ===
                                       message.id && (
                                       <div
@@ -3250,7 +4146,7 @@ export default function ChatPage() {
                                         ) =>
                                           event.stopPropagation()
                                         }
-                                        className={`absolute top-full z-40 mt-1 w-32 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl ${
+                                        className={`absolute top-full z-40 mt-1 w-36 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl ${
                                           isMine
                                             ? "right-0"
                                             : "left-0"
@@ -3271,8 +4167,8 @@ export default function ChatPage() {
                                           </span>
                                         </button>
 
-                                        {isMine && (
-                                          <>
+                                        {isMine &&
+                                          !attachment && (
                                             <button
                                               type="button"
                                               onClick={() =>
@@ -3287,29 +4183,30 @@ export default function ChatPage() {
                                                 Edit
                                               </span>
                                             </button>
+                                          )}
 
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                void deleteMessage(
-                                                  message
-                                                )
-                                              }
-                                              disabled={
-                                                deletingMessageId ===
-                                                message.id
-                                              }
-                                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
-                                            >
-                                              🗑️
-                                              <span>
-                                                {deletingMessageId ===
-                                                message.id
-                                                  ? "Menghapus..."
-                                                  : "Hapus"}
-                                              </span>
-                                            </button>
-                                          </>
+                                        {isMine && (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              void deleteMessage(
+                                                message
+                                              )
+                                            }
+                                            disabled={
+                                              deletingMessageId ===
+                                              message.id
+                                            }
+                                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                          >
+                                            🗑️
+                                            <span>
+                                              {deletingMessageId ===
+                                              message.id
+                                                ? "Menghapus..."
+                                                : "Hapus"}
+                                            </span>
+                                          </button>
                                         )}
                                       </div>
                                     )}
@@ -3346,51 +4243,370 @@ export default function ChatPage() {
                 </div>
 
                 {/* INPUT */}
-                <div className="shrink-0 border-t border-slate-100 bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-4px_15px_rgba(15,23,42,0.03)] sm:p-4">
-                  <div className="mx-auto flex max-w-3xl items-end gap-2 sm:gap-3">
-                    <textarea
-                      value={
-                        messageText
-                      }
-                      onChange={(
-                        event
-                      ) =>
-                        handleMessageChange(
-                          event.target.value
-                        )
-                      }
-                      onKeyDown={
-                        handleMessageKeyDown
-                      }
-                      disabled={
-                        sendingMessage
-                      }
-                      rows={1}
-                      placeholder="Tulis pesan..."
-                      className="max-h-32 min-h-[48px] flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50 disabled:opacity-50"
-                    />
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void sendMessage()
-                      }
-                      disabled={
-                        sendingMessage ||
-                        !messageText.trim()
-                      }
-                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-xl font-bold text-white shadow-md shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      {sendingMessage
-                        ? "..."
-                        : "➤"}
-                    </button>
+                <div className="shrink-0 border-t border-slate-100 bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-4px_15px_rgba(15,23,42,0.03)] sm:p-4">
+                  <div className="mx-auto max-w-3xl">
+                    {/* ATTACHMENT PREVIEW */}
+
+                    {pendingAttachment && (
+                      <div className="mb-3 rounded-2xl border border-blue-100 bg-blue-50 p-3">
+                        <div className="flex items-start gap-3">
+                          <div className="min-w-0 flex-1">
+                            {pendingAttachment.type ===
+                              "image" &&
+                              pendingAttachment.previewUrl && (
+                                <img
+                                  src={
+                                    pendingAttachment.previewUrl
+                                  }
+                                  alt="Preview"
+                                  className="max-h-48 max-w-full rounded-xl object-cover"
+                                />
+                              )}
+
+                            {pendingAttachment.type ===
+                              "video" &&
+                              pendingAttachment.previewUrl && (
+                                <video
+                                  src={
+                                    pendingAttachment.previewUrl
+                                  }
+                                  controls
+                                  className="max-h-48 max-w-full rounded-xl"
+                                />
+                              )}
+
+                            {pendingAttachment.type ===
+                              "audio" &&
+                              pendingAttachment.previewUrl && (
+                                <audio
+                                  src={
+                                    pendingAttachment.previewUrl
+                                  }
+                                  controls
+                                  className="w-full"
+                                />
+                              )}
+
+                            {pendingAttachment.type ===
+                              "file" && (
+                              <div className="flex items-center gap-3 rounded-xl bg-white p-3">
+                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-100 text-xl">
+                                  📄
+                                </div>
+
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-slate-700">
+                                    {
+                                      pendingAttachment.file
+                                        .name
+                                    }
+                                  </p>
+
+                                  <p className="mt-1 text-xs text-slate-400">
+                                    {formatFileSize(
+                                      pendingAttachment.file
+                                        .size
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="mt-2 flex items-center justify-between gap-2">
+                              <p className="truncate text-xs font-semibold text-slate-600">
+                                {
+                                  pendingAttachment.file
+                                    .name
+                                }
+                              </p>
+
+                              <button
+                                type="button"
+                                onClick={
+                                  cancelPendingAttachment
+                                }
+                                disabled={
+                                  uploadingAttachment
+                                }
+                                className="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-red-500 hover:bg-red-50"
+                              >
+                                ✕ Batal
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void sendAttachment()
+                          }
+                          disabled={
+                            uploadingAttachment
+                          }
+                          className="mt-3 h-11 w-full rounded-xl bg-blue-600 text-sm font-bold text-white shadow-md shadow-blue-600/20 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {uploadingAttachment
+                            ? "Mengupload & mengirim..."
+                            : "Kirim Lampiran"}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* RECORDING */}
+
+                    {recordingVoice && (
+                      <div className="mb-3 flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-3">
+                        <div className="flex h-10 w-10 animate-pulse items-center justify-center rounded-full bg-red-500 text-white">
+                          🎙️
+                        </div>
+
+                        <div className="flex-1">
+                          <p className="text-sm font-bold text-red-700">
+                            Sedang merekam suara
+                          </p>
+
+                          <p className="text-xs text-red-500">
+                            {formatRecordingTime(
+                              recordingSeconds
+                            )}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={
+                            stopVoiceRecording
+                          }
+                          className="rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white hover:bg-red-700"
+                        >
+                          Selesai
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="relative flex items-end gap-2 sm:gap-3">
+                      {/* ATTACHMENT BUTTON */}
+
+                      <div
+                        className="relative shrink-0"
+                        onClick={(event) =>
+                          event.stopPropagation()
+                        }
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAttachmentMenuOpen(
+                              (previous) =>
+                                !previous
+                            )
+                          }
+                          disabled={
+                            sendingMessage ||
+                            uploadingAttachment ||
+                            recordingVoice
+                          }
+                          className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-xl text-slate-600 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="Lampiran"
+                        >
+                          📎
+                        </button>
+
+                        {attachmentMenuOpen && (
+                          <div className="absolute bottom-14 left-0 z-50 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                imageInputRef.current?.click()
+                              }
+                              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-blue-50"
+                            >
+                              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-pink-50 text-lg">
+                                📷
+                              </span>
+                              <span>
+                                Galeri / Foto
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                videoInputRef.current?.click()
+                              }
+                              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-blue-50"
+                            >
+                              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-50 text-lg">
+                                🎥
+                              </span>
+                              <span>
+                                Video
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                audioInputRef.current?.click()
+                              }
+                              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-blue-50"
+                            >
+                              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-green-50 text-lg">
+                                🎵
+                              </span>
+                              <span>
+                                Audio / MP3
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                documentInputRef.current?.click()
+                              }
+                              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-blue-50"
+                            >
+                              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50 text-lg">
+                                📄
+                              </span>
+                              <span>
+                                Dokumen / File
+                              </span>
+                            </button>
+
+                            <div className="my-1 border-t border-slate-100" />
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void startVoiceRecording()
+                              }
+                              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-red-600 hover:bg-red-50"
+                            >
+                              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-50 text-lg">
+                                🎙️
+                              </span>
+                              <span>
+                                Rekam Suara
+                              </span>
+                            </button>
+                          </div>
+                        )}
+
+                        <input
+                          ref={
+                            imageInputRef
+                          }
+                          type="file"
+                          accept="image/*"
+                          onChange={(event) =>
+                            handleAttachmentFile(
+                              event,
+                              "image"
+                            )
+                          }
+                          className="hidden"
+                        />
+
+                        <input
+                          ref={
+                            videoInputRef
+                          }
+                          type="file"
+                          accept="video/*"
+                          onChange={(event) =>
+                            handleAttachmentFile(
+                              event,
+                              "video"
+                            )
+                          }
+                          className="hidden"
+                        />
+
+                        <input
+                          ref={
+                            audioInputRef
+                          }
+                          type="file"
+                          accept="audio/*"
+                          onChange={(event) =>
+                            handleAttachmentFile(
+                              event,
+                              "audio"
+                            )
+                          }
+                          className="hidden"
+                        />
+
+                        <input
+                          ref={
+                            documentInputRef
+                          }
+                          type="file"
+                          accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar,.7z,.csv"
+                          onChange={(event) =>
+                            handleAttachmentFile(
+                              event,
+                              "file"
+                            )
+                          }
+                          className="hidden"
+                        />
+                      </div>
+
+                      <textarea
+                        value={
+                          messageText
+                        }
+                        onChange={(
+                          event
+                        ) =>
+                          handleMessageChange(
+                            event.target
+                              .value
+                          )
+                        }
+                        onKeyDown={
+                          handleMessageKeyDown
+                        }
+                        disabled={
+                          sendingMessage ||
+                          uploadingAttachment ||
+                          recordingVoice
+                        }
+                        rows={1}
+                        placeholder="Tulis pesan..."
+                        className="max-h-32 min-h-[48px] flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50 disabled:opacity-50"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void sendMessage()
+                        }
+                        disabled={
+                          sendingMessage ||
+                          uploadingAttachment ||
+                          recordingVoice ||
+                          !messageText.trim()
+                        }
+                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-xl font-bold text-white shadow-md shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {sendingMessage
+                          ? "..."
+                          : "➤"}
+                      </button>
+                    </div>
                   </div>
 
                   <p className="mx-auto mt-2 hidden max-w-3xl text-[10px] text-slate-400 sm:block">
                     Enter untuk mengirim ·
                     Shift + Enter untuk
-                    baris baru
+                    baris baru · 📎 untuk
+                    foto, video, audio,
+                    file, dan rekaman suara
                   </p>
                 </div>
               </>
@@ -3415,7 +4631,9 @@ export default function ChatPage() {
             <button
               type="button"
               onClick={() =>
-                setErrorMessage("")
+                setErrorMessage(
+                  ""
+                )
               }
               className="text-red-400 transition hover:text-red-700"
             >
@@ -3445,6 +4663,7 @@ export default function ChatPage() {
             }
           >
             {/* HEADER */}
+
             <div className="border-b border-slate-100 px-6 py-5">
               <div className="flex items-center justify-between">
                 <div>
@@ -3474,8 +4693,10 @@ export default function ChatPage() {
             </div>
 
             {/* BODY */}
+
             <div className="p-6">
               {/* FOTO */}
+
               <div className="flex flex-col items-center">
                 <div className="relative">
                   {avatarPreview ? (
@@ -3542,6 +4763,7 @@ export default function ChatPage() {
               </div>
 
               {/* ERROR PROFILE */}
+
               {profileError && (
                 <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                   ⚠️{" "}
@@ -3550,6 +4772,7 @@ export default function ChatPage() {
               )}
 
               {/* NAMA */}
+
               <div className="mt-6">
                 <label
                   htmlFor="profileName"
@@ -3568,7 +4791,8 @@ export default function ChatPage() {
                     event
                   ) =>
                     setProfileName(
-                      event.target.value
+                      event.target
+                        .value
                     )
                   }
                   disabled={
@@ -3579,6 +4803,7 @@ export default function ChatPage() {
               </div>
 
               {/* USERNAME */}
+
               <div className="mt-4">
                 <label
                   htmlFor="profileUsername"
@@ -3613,6 +4838,7 @@ export default function ChatPage() {
               </div>
 
               {/* BUTTON */}
+
               <div className="mt-6 flex gap-3">
                 <button
                   type="button"
