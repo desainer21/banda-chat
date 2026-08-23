@@ -42,12 +42,8 @@ export default function GlobalChatFeatures() {
       const { data: rows } = await supabase.from("profiles").select("id, full_name, username, avatar_url").neq("id", id).order("full_name");
       if (active) setUsers((rows || []) as Profile[]);
     })();
-
     const findInput = () => {
-      if (window.location.pathname !== "/chat") {
-        setInputParent(null);
-        return;
-      }
+      if (window.location.pathname !== "/chat") { setInputParent(null); return; }
       const textarea = document.querySelector("textarea[placeholder='Tulis pesan...']") as HTMLTextAreaElement | null;
       setInputParent(textarea?.parentElement || null);
     };
@@ -59,6 +55,12 @@ export default function GlobalChatFeatures() {
   }, []);
 
   if (!mounted || !userId || !inputParent || window.location.pathname !== "/chat") return null;
+
+  const startCall = (kind: "audio" | "video") => {
+    if (!selectedUser) return;
+    window.dispatchEvent(new CustomEvent("banda:start-call", { detail: kind }));
+    setCallOpen(false);
+  };
 
   const content = (
     <div className="relative flex shrink-0 items-center gap-1">
@@ -78,7 +80,7 @@ export default function GlobalChatFeatures() {
               </button>
             ))}
           </div>
-          {selectedUser && <div className="grid grid-cols-2 gap-2 border-t border-slate-100 p-2"><button type="button" onClick={() => setCallOpen(false)} className="rounded-xl bg-emerald-500 px-3 py-2.5 text-sm font-bold text-white">📞 Telepon</button><button type="button" onClick={() => setCallOpen(false)} className="rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-bold text-white">🎥 Video</button></div>}
+          {selectedUser && <div className="grid grid-cols-2 gap-2 border-t border-slate-100 p-2"><button type="button" onClick={() => startCall("audio")} className="rounded-xl bg-emerald-500 px-3 py-2.5 text-sm font-bold text-white">📞 Telepon</button><button type="button" onClick={() => startCall("video")} className="rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-bold text-white">🎥 Video</button></div>}
         </div>
       )}
       <button type="button" onClick={(e) => { e.stopPropagation(); setEmojiOpen(v => !v); setCallOpen(false); }} className="flex h-12 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-2xl text-slate-600 shadow-sm hover:border-blue-300 hover:bg-blue-50" title="Emoji / Prasa">😊</button>
