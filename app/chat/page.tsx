@@ -3126,21 +3126,24 @@ export default function ChatPage() {
             .trim()
             .toLowerCase();
 
+        const isContact =
+          Boolean(contactInfo[user.id]?.conversationId);
+
+        /* Beranda hanya menampilkan kontak yang sudah memiliki percakapan. */
         if (!keyword) {
-          return true;
+          return isContact;
         }
 
+        /* Pencarian harus cocok 100% dengan nama lengkap atau username. */
         return (
           user.full_name
-            .toLowerCase()
-            .includes(
-              keyword
-            ) ||
+            .trim()
+            .toLowerCase() ===
+            keyword ||
           user.username
-            ?.toLowerCase()
-            .includes(
-              keyword
-            )
+            ?.trim()
+            .toLowerCase() ===
+            keyword
         );
       }
     );
@@ -3321,6 +3324,16 @@ export default function ChatPage() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            <a
+              href="/chat/grup"
+              onClick={(event) => event.stopPropagation()}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/20"
+              title="Grup Banda Chat"
+            >
+              <span aria-hidden="true">👥</span>
+              <span className="hidden sm:inline">Grup</span>
+            </a>
+
             <button
               type="button"
               onClick={(event) => {
@@ -3437,7 +3450,7 @@ export default function ChatPage() {
                 </h3>
 
                 <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-600">
-                  {users.length}
+                  {filteredUsers.length}
                 </span>
               </div>
 
@@ -3457,11 +3470,11 @@ export default function ChatPage() {
                   </div>
 
                   <p className="mt-3 text-sm font-semibold text-slate-700">
-                    Belum ada pengguna lain
+                    Belum ada kontak
                   </p>
 
                   <p className="mt-1 text-xs leading-5 text-slate-400">
-                    Daftar pengguna akan muncul di sini.
+                    Cari nama akun atau username secara tepat untuk menambahkan kontak baru.
                   </p>
                 </div>
               ) : (

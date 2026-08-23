@@ -191,18 +191,32 @@ export default function DaftarPage() {
       }
 
       /*
-       * Jika email confirmation aktif,
-       * tampilkan informasi.
+       * Jika signUp berhasil tetapi session tidak langsung dikembalikan,
+       * lakukan login otomatis agar pengguna tidak perlu kembali ke halaman login.
        */
-      setSuccessMessage(
-        "Akun berhasil dibuat. Silakan cek email Anda jika diminta melakukan konfirmasi, kemudian masuk ke Banda Chat."
-      );
+      const {
+        data: autoLoginData,
+        error: autoLoginError,
+      } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password,
+      });
 
-      setFullName("");
-      setUsername("");
-      setEmail("");
-      setPassword("");
-      setConfirmPassword("");
+      if (autoLoginError) {
+        throw new Error(
+          "Akun berhasil dibuat, tetapi login otomatis gagal. Pastikan konfirmasi email Supabase tidak diwajibkan."
+        );
+      }
+
+      if (autoLoginData.session?.user) {
+        window.location.href =
+          "/chat";
+        return;
+      }
+
+      throw new Error(
+        "Akun berhasil dibuat, tetapi sesi login otomatis tidak tersedia."
+      );
     } catch (error) {
       console.error(
         "Register error:",
