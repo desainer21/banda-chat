@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/patch-contact-isolation.cjs && next dev",
     "build": "next build",
+    "prebuild": "node scripts/patch-contact-isolation.cjs",
     "start": "next start",
     "lint": "eslint"
   },
