@@ -1,0 +1,33 @@
+name: Apply Banda Chat patch
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch Banda Chat
+        run: node scripts/patch-contact-and-registration.cjs
+
+      - name: Commit patched files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/chat/page.tsx app/daftar/page.tsx
+          git diff --cached --quiet || git commit -m "Fix private contacts and automatic registration login [skip ci]"
+          git push
+
+      - name: Remove one-time patch files
+        run: |
+          git rm scripts/patch-contact-and-registration.cjs .github/workflows/patch-banda-chat.yml
+          git commit -m "Remove one-time patch workflow [skip ci]"
+          git push
