@@ -1,0 +1,83 @@
+name: Fix Banda Chat contact search
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch chat contact behavior
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path('app/chat/page.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          old_state = '''  const [users, setUsers] = useState<Profile[]>([]);\n  const [contactInfo, setContactInfo] =\n    useState<Record<string, ContactInfo>>({});'''
+          new_state = '''  const [users, setUsers] = useState<Profile[]>([]);\n  const [searchResults, setSearchResults] = useState<Profile[]>([]);\n  const [contactInfo, setContactInfo] =\n    useState<Record<string, ContactInfo>>({});'''
+          if old_state not in text:
+              raise SystemExit('state marker not found')
+          text = text.replace(old_state, new_state, 1)
+
+          start = text.index('  async function loadUsers(\n    authUserId: string\n  ) {')
+          end = text.index('  /* ============================================================\n     CONTACT INFO', start)
+          new_load_users = '''  async function loadUsers(\n    authUserId: string\n  ) {\n    setLoadingUsers(true);\n\n    try {\n      // Beranda hanya menampilkan kontak yang memang sudah\n      // menjadi anggota percakapan dengan pengguna ini.\n      const { data: memberships, error: membershipError } =\n        await supabase\n          .from("conversation_members")\n          .select("conversation_id")\n          .eq("user_id", authUserId);\n\n      if (membershipError) {\n        throw new Error(membershipError.message);\n      }\n\n      const conversationIds = (memberships || []).map(\n        (item) => item.conversation_id\n      );\n\n      if (conversationIds.length === 0) {\n        setUsers([]);\n        return;\n      }\n\n      const { data: members, error: membersError } =\n        await supabase\n          .from("conversation_members")\n          .select("conversation_id, user_id")\n          .in("conversation_id", conversationIds)\n          .neq("user_id", authUserId);\n\n      if (membersError) {\n        throw new Error(membersError.message);\n      }\n\n      const contactIds = Array.from(\n        new Set((members || []).map((item) => item.user_id))\n      );\n\n      if (contactIds.length === 0) {\n        setUsers([]);\n        return;\n      }\n\n      const { data, error } = await supabase\n        .from("profiles")\n        .select("id, full_name, username, avatar_url")\n        .in("id", contactIds);\n\n      if (error) {\n        throw new Error(error.message);\n      }\n\n      setUsers(\n        (data || []).sort((a, b) =>\n          a.full_name.localeCompare(b.full_name, "id-ID")\n        )\n      );\n    } catch (error) {\n      console.error("Load contacts error:", error);\n      setErrorMessage(\n        error instanceof Error\n          ? "Gagal memuat kontak: " + error.message\n          : "Gagal memuat kontak."\n      );\n    } finally {\n      setLoadingUsers(false);\n    }\n  }\n\n  /* ============================================================\n     EXACT ACCOUNT-NAME SEARCH\n     ============================================================ */\n\n  useEffect(() => {\n    if (!currentUserId) {\n      return;\n    }\n\n    const keyword = search.trim();\n\n    if (!keyword) {\n      setSearchResults([]);\n      return;\n    }\n\n    const timer = window.setTimeout(async () => {\n      setLoadingUsers(true);\n\n      try {\n        // Pencarian sengaja memakai kecocokan username 100% tepat\n        // (case-insensitive), bukan startsWith/includes.\n        const { data, error } = await supabase\n          .from("profiles")\n          .select("id, full_name, username, avatar_url")\n          .eq("username", keyword)\n          .neq("id", currentUserId)\n          .limit(10);\n\n        if (error) {\n          throw new Error(error.message);\n        }\n\n        setSearchResults(data || []);\n      } catch (error) {\n        console.error("Exact account search error:", error);\n        setSearchResults([]);\n      } finally {\n        setLoadingUsers(false);\n      }\n    }, 300);\n\n    return () => window.clearTimeout(timer);\n  }, [search, currentUserId]);\n\n'''
+          text = text[:start] + new_load_users + text[end:]
+
+          marker = '''      setMessages([]);\n\n      await loadMessages(\n        conversation.id,\n        authUserId\n      );'''
+          replacement = '''      setMessages([]);\n\n      // Kontak baru hanya masuk ke beranda setelah pengguna\n      // benar-benar memilih akun hasil pencarian dan membuka chat.\n      setUsers((previous) => {\n        if (previous.some((item) => item.id === user.id)) {\n          return previous;\n        }\n        return [user, ...previous];\n      });\n\n      setSearch("");\n      setSearchResults([]);\n\n      await loadMessages(\n        conversation.id,\n        authUserId\n      );'''
+          if marker not in text:
+              raise SystemExit('startChat marker not found')
+          text = text.replace(marker, replacement, 1)
+
+          start = text.index('  const filteredUsers =')
+          end = text.index('  /* ============================================================\n     LOGOUT', start)
+          new_filter = '''  // Tanpa pencarian: hanya kontak yang sudah ada di beranda.\n  // Dengan pencarian: hanya hasil username yang sama persis.\n  const filteredUsers = search.trim()\n    ? searchResults\n    : users;\n\n'''
+          text = text[:start] + new_filter + text[end:]
+
+          old_realtime = '''            const isCurrentConversation =\n              newMessage.conversation_id ===\n              selectedConversationIdRef.current;\n\n            if (\n              isCurrentConversation\n            ) {\n              refreshContactInfoRealtime();\n              return;\n            }\n\n            setContactInfo(\n              (previous) => {\n                const next = {\n                  ...previous,\n                };\n\n                const matchedUserId =\n                  Object.keys(\n                    next\n                  ).find(\n                    (userId) =>\n                      next[userId]\n                        .conversationId ===\n                      newMessage.conversation_id\n                  );\n\n                if (\n                  matchedUserId\n                ) {\n                  next[\n                    matchedUserId\n                  ] = {\n                    ...next[\n                      matchedUserId\n                    ],\n                    lastMessage:\n                      newMessage.content,\n                    lastMessageAt:\n                      newMessage.created_at,\n                    unreadCount:\n                      next[\n                        matchedUserId\n                      ].unreadCount +\n                      1,\n                  };\n                }\n\n                return next;\n              }\n            );\n\n            refreshContactInfoRealtime();'''
+          new_realtime = '''            const isCurrentConversation =\n              newMessage.conversation_id ===\n              selectedConversationIdRef.current;\n\n            // Jika chat sedang terbuka, pesan langsung dianggap dibaca.\n            if (isCurrentConversation) {\n              refreshContactInfoRealtime();\n              return;\n            }\n\n            // Jika chat tidak sedang dibuka, badge unread dinaikkan\n            // langsung dan tidak ditimpa oleh refresh yang terlambat.\n            setContactInfo((previous) => {\n              const next = { ...previous };\n\n              const matchedUserId = Object.keys(next).find(\n                (userId) =>\n                  next[userId].conversationId ===\n                  newMessage.conversation_id\n              );\n\n              if (!matchedUserId) {\n                return next;\n              }\n\n              const current = next[matchedUserId];\n              next[matchedUserId] = {\n                ...current,\n                lastMessage: newMessage.content,\n                lastMessageAt: newMessage.created_at,\n                unreadCount: current.unreadCount + 1,\n              };\n\n              return next;\n            });'''
+          if old_realtime not in text:
+              raise SystemExit('realtime marker not found')
+          text = text.replace(old_realtime, new_realtime, 1)
+
+          old_placeholder = 'placeholder="Cari pengguna..."'
+          new_placeholder = 'placeholder="Cari nama akun (username) dengan tepat..."'
+          if old_placeholder not in text:
+              raise SystemExit('placeholder marker not found')
+          text = text.replace(old_placeholder, new_placeholder, 1)
+
+          old_description = '''                    Daftar pengguna akan muncul di sini.\n                  </p>'''
+          new_description = '''                    Ketik nama akun (username) secara lengkap dan tepat untuk menemukan pengguna.\n                  </p>'''
+          if old_description not in text:
+              raise SystemExit('empty-state description marker not found')
+          text = text.replace(old_description, new_description, 1)
+
+          old_heading = '''                    Kontak Banda Chat\n                </h3>'''
+          new_heading = '''                    {search.trim() ? "Hasil pencarian akun" : "Kontak Banda Chat"}\n                </h3>'''
+          if old_heading not in text:
+              raise SystemExit('contact heading marker not found')
+          text = text.replace(old_heading, new_heading, 1)
+
+          path.write_text(text, encoding='utf-8')
+          print('Patch completed')
+      - name: Commit patch and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/chat/page.tsx
+          git rm .github/workflows/fix-contact-search.yml
+          git diff --cached --quiet && exit 0 || true
+          git commit -m "Fix unread badges and exact account contact search"
+          git push
