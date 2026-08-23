@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "predev": "node scripts/patch-contact-and-registration.cjs",
     "build": "next build",
+    "prebuild": "node scripts/patch-contact-and-registration.cjs",
     "start": "next start",
     "lint": "eslint"
   },
