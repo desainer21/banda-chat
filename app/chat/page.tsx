@@ -1919,46 +1919,73 @@ export default function ChatPage() {
               return;
             }
 
-            setContactInfo(
-              (previous) => {
-                const next = {
+            const {
+              data: conversationMembers,
+              error: conversationMembersError,
+            } = await supabase
+              .from("conversation_members")
+              .select("user_id")
+              .eq(
+                "conversation_id",
+                newMessage.conversation_id
+              );
+
+            if (conversationMembersError) {
+              console.error(
+                "Incoming contact members error:",
+                conversationMembersError
+              );
+            }
+
+            const incomingContactUserId =
+              (conversationMembers || [])
+                .map((member) => member.user_id)
+                .find((userId) => userId !== currentUserId);
+
+            if (incomingContactUserId) {
+              setContactInfo((previous) => {
+                const existing =
+                  previous[incomingContactUserId];
+
+                return {
                   ...previous,
-                };
-
-                const matchedUserId =
-                  Object.keys(
-                    next
-                  ).find(
-                    (userId) =>
-                      next[userId]
-                        .conversationId ===
-                      newMessage.conversation_id
-                  );
-
-                if (
-                  matchedUserId
-                ) {
-                  next[
-                    matchedUserId
-                  ] = {
-                    ...next[
-                      matchedUserId
-                    ],
+                  [incomingContactUserId]: {
+                    conversationId:
+                      newMessage.conversation_id,
                     lastMessage:
                       newMessage.content,
                     lastMessageAt:
                       newMessage.created_at,
                     unreadCount:
-                      next[
-                        matchedUserId
-                      ].unreadCount +
-                      1,
-                  };
-                }
+                      (existing?.unreadCount || 0) + 1,
+                  },
+                };
+              });
+            }
 
-                return next;
+            await loadContactInfo(currentUserId);
+
+            setContactInfo((previous) => {
+              if (!incomingContactUserId) {
+                return previous;
               }
-            );
+
+              const existing = previous[incomingContactUserId];
+
+              return {
+                ...previous,
+                [incomingContactUserId]: {
+                  conversationId:
+                    newMessage.conversation_id,
+                  lastMessage:
+                    newMessage.content,
+                  lastMessageAt:
+                    newMessage.created_at,
+                  unreadCount:
+                    existing?.unreadCount || 1,
+                },
+              };
+            });
 
             refreshContactInfoRealtime();
           }
