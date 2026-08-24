@@ -1896,7 +1896,7 @@ export default function ChatPage() {
             schema: "public",
             table: "messages",
           },
-          (payload) => {
+          async (payload) => {
             const newMessage =
               payload.new as Message;
 
