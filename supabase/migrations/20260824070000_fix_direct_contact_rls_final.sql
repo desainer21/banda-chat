@@ -24,7 +24,7 @@ $$;
 revoke all on function public.banda_can_view_conversation_members(uuid, uuid) from public;
 grant execute on function public.banda_can_view_conversation_members(uuid, uuid) to authenticated;
 
-a lter table public.conversation_members enable row level security;
+alter table public.conversation_members enable row level security;
 
 -- Remove policies created by earlier attempts. Dropping a missing policy is safe.
 drop policy if exists "conversation_members_select_own" on public.conversation_members;
