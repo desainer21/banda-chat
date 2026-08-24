@@ -24,3 +24,18 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Perbaikan responsive header halaman Grup Banda Chat.
+   Desktop tetap seperti semula; pada layar HP tombol dipindahkan
+   ke baris berikutnya agar jumlah anggota dan status admin tidak terjepit. */
+@media (max-width: 640px) {
+  main section[class*="min-h-[70vh]"] > div:first-child {
+    flex-wrap: wrap;
+  }
+
+  main section[class*="min-h-[70vh]"] > div:first-child > div:last-child {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
