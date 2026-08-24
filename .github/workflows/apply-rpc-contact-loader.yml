@@ -1,0 +1,53 @@
+name: Apply RPC contact loader
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message != 'fix: use RPC for contact loader'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Replace contact loader
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('app/chat/page.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          start_marker = '  async function loadContactInfo(\n'
+          end_marker = '\n  function refreshContactInfoRealtime()'
+
+          start = text.find(start_marker)
+          if start < 0:
+              raise SystemExit('loadContactInfo start not found')
+
+          end = text.find(end_marker, start)
+          if end < 0:
+              raise SystemExit('loadContactInfo end not found')
+
+          replacement = '''  async function loadContactInfo(\n    authUserId: string\n  ) {\n    try {\n      const { data, error } = await supabase.rpc(\n        "get_my_direct_contacts"\n      );\n\n      if (error) {\n        console.error("Load direct contacts RPC error:", error);\n        return;\n      }\n\n      const aggregatedInfo: Record<string, ContactInfo> = {};\n\n      (data || []).forEach((row: {\n        user_id: string;\n        conversation_id: string;\n        last_message: string | null;\n        last_message_at: string | null;\n        unread_count: number | string | null;\n      }) => {\n        if (!row.user_id || row.user_id === authUserId) {\n          return;\n        }\n\n        const unread = Number(row.unread_count || 0);\n        const existing = aggregatedInfo[row.user_id];\n\n        if (!existing) {\n          aggregatedInfo[row.user_id] = {\n            conversationId: row.conversation_id,\n            lastMessage: row.last_message,\n            lastMessageAt: row.last_message_at,\n            unreadCount: unread,\n          };\n          return;\n        }\n\n        existing.unreadCount += unread;\n\n        if (\n          row.last_message_at &&\n          (!existing.lastMessageAt ||\n            new Date(row.last_message_at).getTime() >\n              new Date(existing.lastMessageAt).getTime())\n        ) {\n          existing.conversationId = row.conversation_id;\n          existing.lastMessage = row.last_message;\n          existing.lastMessageAt = row.last_message_at;\n        }\n      });\n\n      setContactInfo(aggregatedInfo);\n    } catch (error) {\n      console.error("Load contact info error:", error);\n    }\n  }\n'''
+
+          path.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+
+      - name: Commit patched page
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/chat/page.tsx
+          if git diff --cached --quiet; then
+            echo 'No page.tsx changes required.'
+            exit 0
+          fi
+          git commit -m "fix: use RPC for contact loader"
+          git push
