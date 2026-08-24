@@ -1,8 +1,6 @@
-name: Fix Banda Chat direct contacts
+name: Fix automatic contact from incoming message
 
 on:
-  push:
-    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -10,86 +8,40 @@ permissions:
 
 jobs:
   patch:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Replace contact loader with RPC
+      - name: Patch incoming contact logic
         shell: python
         run: |
           from pathlib import Path
 
-          path = Path('app/chat/page.tsx')
-          text = path.read_text(encoding='utf-8')
+          path = Path("app/chat/page.tsx")
+          text = path.read_text(encoding="utf-8")
 
-          start_marker = '  async function loadContactInfo(\n    authUserId: string\n  ) {'
-          end_marker = '\n  function refreshContactInfoRealtime() {'
-
-          start = text.find(start_marker)
-          end = text.find(end_marker, start)
-
-          if start == -1 or end == -1:
-              raise SystemExit('Could not locate loadContactInfo boundaries; no changes made.')
-
-          new_function = '''  async function loadContactInfo(
-    authUserId: string
-  ) {
-    try {
-      const { data, error } = await supabase.rpc(
-        "get_my_direct_contacts"
-      );
-
-      if (error) {
-        console.error(
-          "Load direct contacts RPC error:",
-          error
-        );
-        return;
-      }
-
-      const aggregatedInfo: Record<string, ContactInfo> = {};
-
-      (data || []).forEach(
-        (row: {
-          user_id: string;
-          conversation_id: string;
-          last_message: string | null;
-          last_message_at: string | null;
-          unread_count: number | string | null;
-        }) => {
-          if (!row.user_id || row.user_id === authUserId) {
-            return;
-          }
-
-          aggregatedInfo[row.user_id] = {
-            conversationId: row.conversation_id,
-            lastMessage: row.last_message,
-            lastMessageAt: row.last_message_at,
-            unreadCount: Number(row.unread_count || 0),
-          };
-        }
-      );
-
-      setContactInfo(aggregatedInfo);
-    } catch (error) {
-      console.error(
-        "Load contact info error:",
-        error
-      );
-    }
-  }
+          old = '''            const incomingContactUserId =
+              (conversationMembers || [])
+                .map((member) => member.user_id)
+                .find((userId) => userId !== currentUserId);
 '''
 
-          updated = text[:start] + new_function + text[end:]
+          new = '''            const incomingContactUserId =
+              newMessage.sender_id !== currentUserId
+                ? newMessage.sender_id
+                : null;
+'''
 
-          if updated == text:
-              raise SystemExit('No changes made.')
+          if old not in text:
+              raise SystemExit("Target incoming contact block was not found; no changes made.")
 
-          path.write_text(updated, encoding='utf-8')
-          print('loadContactInfo replaced with get_my_direct_contacts RPC')
+          text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding="utf-8")
+          print("Patched incoming contact user ID to use messages.sender_id")
 
       - name: Commit page change
         shell: bash
@@ -97,9 +49,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/chat/page.tsx
-          if git diff --cached --quiet; then
-            echo "No page.tsx changes detected."
-            exit 0
-          fi
-          git commit -m "fix: load direct contacts through RPC"
+          git commit -m "fix: identify incoming contact from message sender"
           git push
