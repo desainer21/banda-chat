@@ -1,0 +1,165 @@
+name: Apply direct contact RPC integration
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/apply-direct-contact-rpc.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.head_commit.message, 'Apply automatic direct contact RPC integration') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Patch chat page
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/chat/page.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          marker = '  async function loadContactInfo(\n'
+          if marker not in text:
+              raise SystemExit('loadContactInfo marker not found')
+
+          helper = r'''  async function loadDirectContactsFromRpc(authUserId: string) {
+            if (!authUserId) {
+              return;
+            }
+
+            try {
+              const { data, error } = await supabase.rpc(
+                "get_my_direct_contacts"
+              );
+
+              if (error) {
+                console.error(
+                  "get_my_direct_contacts error:",
+                  error
+                );
+                return;
+              }
+
+              const rows = Array.isArray(data) ? data : [];
+
+              if (rows.length === 0) {
+                return;
+              }
+
+              const userIds = rows
+                .map((row: any) => row.user_id as string)
+                .filter(
+                  (id: string) => id && id !== authUserId
+                );
+
+              if (userIds.length === 0) {
+                return;
+              }
+
+              const { data: profiles, error: profilesError } =
+                await supabase
+                  .from("profiles")
+                  .select("id, full_name, username, avatar_url")
+                  .in("id", userIds);
+
+              if (profilesError) {
+                console.error(
+                  "get_my_direct_contacts profiles error:",
+                  profilesError
+                );
+                return;
+              }
+
+              setContactInfo((previous) => {
+                const next = { ...previous };
+
+                for (const row of rows) {
+                  const userId = row.user_id as string;
+
+                  if (!userId || userId === authUserId) {
+                    continue;
+                  }
+
+                  next[userId] = {
+                    conversationId:
+                      (row.conversation_id as string) || null,
+                    lastMessage:
+                      typeof row.last_message === "string"
+                        ? row.last_message
+                        : null,
+                    lastMessageAt:
+                      (row.last_message_at as string) || null,
+                    unreadCount: Number(row.unread_count || 0),
+                  };
+                }
+
+                return next;
+              });
+
+              setUsers((previous) => {
+                const existing = new Map(
+                  previous.map((user) => [user.id, user])
+                );
+
+                for (const profile of profiles || []) {
+                  if (!existing.has(profile.id)) {
+                    existing.set(profile.id, profile as Profile);
+                  }
+                }
+
+                return Array.from(existing.values());
+              });
+            } catch (error) {
+              console.error(
+                "loadDirectContactsFromRpc error:",
+                error
+              );
+            }
+          }
+
+'''
+
+          if 'async function loadDirectContactsFromRpc' not in text:
+              text = text.replace(marker, helper + marker, 1)
+
+          import re
+          pattern = re.compile(r'(\n\s*)await loadContactInfo\(([^\n]+)\);')
+
+          def repl(match):
+              indent = match.group(1)
+              arg = match.group(2)
+              return (
+                  f'{indent}await loadContactInfo({arg});\n'
+                  f'{indent}await loadDirectContactsFromRpc({arg});'
+              )
+
+          text, count = pattern.subn(repl, text)
+
+          if count == 0:
+              raise SystemExit('No loadContactInfo call found to patch')
+
+          path.write_text(text, encoding='utf-8')
+          print(f'Patched {count} loadContactInfo call(s)')
+          PY
+
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/chat/page.tsx
+          if git diff --cached --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Apply automatic direct contact RPC integration'
+          git push origin HEAD:master
