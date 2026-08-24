@@ -1,4 +1,4 @@
-name: Fix automatic contact from incoming message
+name: Fix automatic contacts and attachment download
 
 on:
   push:
@@ -18,32 +18,97 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Patch incoming contact logic
+      - name: Patch chat page
         shell: python
         run: |
           from pathlib import Path
 
           path = Path("app/chat/page.tsx")
           text = path.read_text(encoding="utf-8")
+          changed = False
 
-          old = '''            const incomingContactUserId =
+          old_contact = '''            const incomingContactUserId =
               (conversationMembers || [])
                 .map((member) => member.user_id)
                 .find((userId) => userId !== currentUserId);
 '''
 
-          new = '''            const incomingContactUserId =
+          new_contact = '''            const incomingContactUserId =
               newMessage.sender_id !== currentUserId
                 ? newMessage.sender_id
                 : null;
 '''
 
-          if old not in text:
-              raise SystemExit("Target incoming contact block was not found; no changes made.")
+          if old_contact in text:
+              text = text.replace(old_contact, new_contact, 1)
+              changed = True
+              print("Fixed incoming contact detection")
+          elif "newMessage.sender_id !== currentUserId" in text:
+              print("Incoming contact detection is already fixed")
+          else:
+              raise SystemExit("Incoming contact block not found")
 
-          text = text.replace(old, new, 1)
-          path.write_text(text, encoding="utf-8")
-          print("Patched incoming contact user ID to use messages.sender_id")
+          old_download = '''  function downloadAttachment(attachment: MessageAttachment) {
+    const link = document.createElement("a");
+    link.href = attachment.url;
+    link.download = attachment.name;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+'''
+
+          new_download = '''  async function downloadAttachment(attachment: MessageAttachment) {
+    try {
+      const response = await fetch(attachment.url, {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Download gagal (${response.status})`);
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = blobUrl;
+      link.download = attachment.name || "download";
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.setTimeout(() => {
+        URL.revokeObjectURL(blobUrl);
+      }, 1000);
+    } catch (error) {
+      console.error("Download attachment error:", error);
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "File gagal diunduh."
+      );
+    }
+  }
+'''
+
+          if old_download in text:
+              text = text.replace(old_download, new_download, 1)
+              changed = True
+              print("Fixed attachment download")
+          elif "async function downloadAttachment" in text and "URL.createObjectURL(blob)" in text:
+              print("Attachment download is already fixed")
+          else:
+              raise SystemExit("Attachment download block not found")
+
+          if changed:
+              path.write_text(text, encoding="utf-8")
+              print("app/chat/page.tsx patched")
+          else:
+              print("No page changes needed")
 
       - name: Commit page change
         shell: bash
@@ -55,5 +120,5 @@ jobs:
             echo "No changes detected."
             exit 0
           fi
-          git commit -m "fix: identify incoming contact from message sender"
+          git commit -m "fix: automatic incoming contacts and attachment downloads"
           git push
