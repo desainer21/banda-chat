@@ -1,0 +1,45 @@
+name: Fix auto contacts async
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Fix realtime callback syntax
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path('app/chat/page.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          pattern = r'("all-chat-messages-"\s*\+\s*currentUserId[\s\S]*?event:\s*"INSERT",\s*schema:\s*"public",\s*table:\s*"messages",\s*\},\s*)\(payload\)\s*=>\s*\{'
+          replacement = r'\1async (payload) => {'
+
+          updated, count = re.subn(pattern, replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('Could not locate all-chat-messages INSERT callback; no changes made.')
+
+          path.write_text(updated, encoding='utf-8')
+
+      - name: Commit and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/chat/page.tsx
+          git rm .github/workflows/fix-auto-contacts-async.yml
+          git commit -m "fix: make incoming contact realtime handler async"
+          git push
