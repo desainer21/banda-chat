@@ -1,4 +1,4 @@
-name: Fix contact merge
+name: Fix first incoming direct contact
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Patch contact refresh merge
+      - name: Patch incoming direct contact detection
         shell: python
         run: |
           from pathlib import Path
@@ -24,29 +24,77 @@ jobs:
           path = Path('app/chat/page.tsx')
           text = path.read_text(encoding='utf-8')
 
-          old_empty = '''      if (\n        !myMemberships ||\n        myMemberships.length === 0\n      ) {\n        setContactInfo({});\n        return;\n      }'''
+          old = '''            const {
+              data: conversationMembers,
+              error: conversationMembersError,
+            } = await supabase
+              .from("conversation_members")
+              .select("user_id")
+              .eq(
+                "conversation_id",
+                newMessage.conversation_id
+              );
 
-          new_empty = '''      if (\n        !myMemberships ||\n        myMemberships.length === 0\n      ) {\n        return;\n      }'''
+            if (conversationMembersError) {
+              console.error(
+                "Incoming contact members error:",
+                conversationMembersError
+              );
+            }
 
-          if old_empty not in text:
-              raise SystemExit('Expected empty-membership block was not found; no changes made.')
+            const incomingContactUserId =
+              (conversationMembers || [])
+                .map((member) => member.user_id)
+                .find((userId) => userId !== currentUserId);'''
 
-          text = text.replace(old_empty, new_empty, 1)
+          new = '''            const {
+              data: conversation,
+              error: conversationError,
+            } = await supabase
+              .from("conversations")
+              .select("id, type")
+              .eq(
+                "id",
+                newMessage.conversation_id
+              )
+              .maybeSingle();
 
-          old_set = '''      setContactInfo(\n        aggregatedInfo\n      );'''
+            if (conversationError) {
+              console.error(
+                "Incoming conversation lookup error:",
+                conversationError
+              );
+            }
 
-          new_set = '''      setContactInfo((previous) => {\n        const next = { ...previous };\n\n        Object.entries(aggregatedInfo).forEach(\n          ([userId, info]) => {\n            const existing = next[userId];\n\n            if (!existing) {\n              next[userId] = info;\n              return;\n            }\n\n            const existingTime = existing.lastMessageAt\n              ? new Date(existing.lastMessageAt).getTime()\n              : 0;\n\n            const incomingTime = info.lastMessageAt\n              ? new Date(info.lastMessageAt).getTime()\n              : 0;\n\n            if (incomingTime >= existingTime) {\n              next[userId] = {\n                ...existing,\n                ...info,\n              };\n            } else {\n              next[userId] = {\n                ...info,\n                ...existing,\n              };\n            }\n          }\n        );\n\n        return next;\n      });'''
+            if (conversation?.type !== "direct") {
+              refreshContactInfoRealtime();
+              return;
+            }
 
-          if old_set not in text:
-              raise SystemExit('Expected contactInfo replacement block was not found; no changes made.')
+            // For a direct conversation the sender_id is the contact.
+            // Do not depend on conversation_members RLS to discover it.
+            const incomingContactUserId =
+              newMessage.sender_id !== currentUserId
+                ? newMessage.sender_id
+                : null;'''
 
-          text = text.replace(old_set, new_set, 1)
+          if old not in text:
+              raise SystemExit(
+                  'Incoming contact block not found; page.tsx was not changed.'
+              )
+
+          text = text.replace(old, new, 1)
+
           path.write_text(text, encoding='utf-8')
 
-      - name: Commit page fix
+      - name: Remove obsolete patch workflows and commit the real fix
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/chat/page.tsx
-          git commit -m "fix: preserve automatic contacts" || exit 0
+
+          find .github/workflows -type f -name '*.yml' ! -name 'fix-contact-merge.yml' -delete
+          find .github/workflows -type f -name '*.yaml' -delete
+
+          git add app/chat/page.tsx .github/workflows
+          git commit -m "fix: automatically add first direct-message contact" || exit 0
           git push
