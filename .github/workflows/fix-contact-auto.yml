@@ -1,0 +1,146 @@
+name: Fix auto contacts
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-contact:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Patch chat contact handling
+        env:
+          FILE: app/chat/page.tsx
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("app/chat/page.tsx")
+          s = p.read_text(encoding="utf-8")
+
+          marker = "  /* AUTO-CONTACT-FIRST-MESSAGE-FIX */"
+          if marker in s:
+              print("Patch already present")
+              raise SystemExit(0)
+
+          block = r'''  /* AUTO-CONTACT-FIRST-MESSAGE-FIX */
+          useEffect(() => {
+            if (!currentUserId) return;
+
+            const channel = supabase
+              .channel(`auto-contact-${currentUserId}`)
+              .on(
+                "postgres_changes",
+                {
+                  event: "INSERT",
+                  schema: "public",
+                  table: "messages",
+                },
+                async (payload) => {
+                  const message = payload.new as Message;
+
+                  if (!message?.conversation_id || !message?.sender_id) {
+                    return;
+                  }
+
+                  if (message.sender_id === currentUserId) {
+                    return;
+                  }
+
+                  const { data: memberRows, error: memberError } =
+                    await supabase
+                      .from("conversation_members")
+                      .select("user_id")
+                      .eq("conversation_id", message.conversation_id);
+
+                  if (memberError || !memberRows) {
+                    return;
+                  }
+
+                  const senderIsMember = memberRows.some(
+                    (member) => member.user_id === message.sender_id
+                  );
+
+                  const currentUserIsMember = memberRows.some(
+                    (member) => member.user_id === currentUserId
+                  );
+
+                  if (!senderIsMember || !currentUserIsMember) {
+                    return;
+                  }
+
+                  const { data: senderProfile, error: profileError } =
+                    await supabase
+                      .from("profiles")
+                      .select("id, full_name, username, avatar_url")
+                      .eq("id", message.sender_id)
+                      .maybeSingle();
+
+                  if (profileError || !senderProfile) {
+                    return;
+                  }
+
+                  const attachment = parseAttachmentContent(message.content);
+                  const preview = attachment
+                    ? getAttachmentLabel(attachment)
+                    : message.content;
+
+                  setUsers((previous) => {
+                    if (previous.some((user) => user.id === senderProfile.id)) {
+                      return previous;
+                    }
+                    return [...previous, senderProfile as Profile];
+                  });
+
+                  setContactInfo((previous) => {
+                    if (previous[senderProfile.id]) {
+                      return previous;
+                    }
+
+                    return {
+                      ...previous,
+                      [senderProfile.id]: {
+                        conversationId: message.conversation_id,
+                        lastMessage: preview,
+                        lastMessageAt: message.created_at,
+                        unreadCount: selectedConversationIdRef.current === message.conversation_id ? 0 : 1,
+                      },
+                    };
+                  });
+                }
+              )
+              .subscribe();
+
+            return () => {
+              void supabase.removeChannel(channel);
+            };
+          }, [currentUserId]);
+'''
+
+          needle = "\n  return ("
+          if needle not in s:
+              raise SystemExit("Could not find component return marker")
+
+          s = s.replace(needle, "\n" + block + needle, 1)
+          p.write_text(s, encoding="utf-8")
+          print("Patched app/chat/page.tsx")
+          PY
+
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/chat/page.tsx
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "fix: auto add contact when first message arrives"
+          git push
