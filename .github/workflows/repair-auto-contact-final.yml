@@ -22,14 +22,10 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-          import re
 
           path = Path('app/chat/page.tsx')
           text = path.read_text(encoding='utf-8')
 
-          # 1) Replace loadContactInfo so incoming messages themselves can
-          #    identify the other user; do not depend exclusively on reading
-          #    the other member row from conversation_members.
           start = text.find('  async function loadContactInfo(')
           end = text.find('  function refreshContactInfoRealtime()', start)
           if start < 0 or end < 0:
@@ -93,9 +89,6 @@ jobs:
         return;
       }
 
-      // Critical fallback: an incoming message already tells us exactly
-      // who the contact is. This avoids depending on a second member-row
-      // query which may be restricted by RLS.
       (allMessages || []).forEach((message) => {
         if (
           message.sender_id !== authUserId &&
@@ -188,8 +181,6 @@ jobs:
 '''
           text = text[:start] + new_loader + text[end:]
 
-          # 2) The realtime INSERT already contains sender_id. Never query
-          #    conversation_members to discover the incoming contact.
           old_start = text.find('            const {\n              data: conversationMembers,')
           old_end = text.find('            await loadContactInfo(currentUserId);', old_start)
           if old_start < 0 or old_end < 0:
@@ -219,8 +210,6 @@ jobs:
 '''
           text = text[:old_start] + realtime_block + text[old_end:]
 
-          # 3) Download attachments through fetch/blob instead of opening
-          #    the public URL in a new browser tab.
           old_download = '''  function downloadAttachment(attachment: MessageAttachment) {
     const link = document.createElement("a");
     link.href = attachment.url;
@@ -289,3 +278,5 @@ jobs:
           git rm .github/workflows/repair-auto-contact-final.yml
           git commit -m "fix: automatic contacts from incoming messages [auto-contact-final]"
           git push origin HEAD:master
+
+# retrigger: 2026-08-24T10:00:00Z
