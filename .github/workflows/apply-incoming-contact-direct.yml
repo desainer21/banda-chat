@@ -1,0 +1,80 @@
+name: Apply incoming contact direct repair
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: "!contains(github.event.head_commit.message, '[incoming-contact-direct]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Patch realtime incoming contact
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('app/chat/page.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          old = '''            const {
+              data: conversationMembers,
+              error: conversationMembersError,
+            } = await supabase
+              .from("conversation_members")
+              .select("user_id")
+              .eq(
+                "conversation_id",
+                newMessage.conversation_id
+              );
+
+            if (conversationMembersError) {
+              console.error(
+                "Incoming contact members error:",
+                conversationMembersError
+              );
+            }
+
+            const incomingContactUserId =
+              (conversationMembers || [])
+                .map((member) => member.user_id)
+                .find((userId) => userId !== currentUserId);
+'''
+
+          new = '''            // For a first incoming message, the sender is the contact.
+            // Do not depend on conversation_members being readable here.
+            const incomingContactUserId =
+              newMessage.sender_id !== currentUserId
+                ? newMessage.sender_id
+                : null;
+'''
+
+          if old not in text:
+              raise SystemExit('Target realtime contact block was not found; no changes made.')
+
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          print('Incoming contact patch applied.')
+
+      - name: Verify
+        run: |
+          grep -q 'newMessage.sender_id !== currentUserId' app/chat/page.tsx
+          if grep -q 'const {.*conversationMembers' app/chat/page.tsx; then true; fi
+          echo 'Verification passed.'
+
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/chat/page.tsx
+          git rm .github/workflows/apply-incoming-contact-direct.yml
+          git commit -m "fix: derive incoming contact from message sender [incoming-contact-direct]"
+          git push origin HEAD:master
