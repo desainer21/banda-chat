@@ -1,0 +1,291 @@
+name: Repair automatic contacts final
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: >-
+      !contains(github.event.head_commit.message, '[auto-contact-final]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Patch Banda Chat
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path('app/chat/page.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          # 1) Replace loadContactInfo so incoming messages themselves can
+          #    identify the other user; do not depend exclusively on reading
+          #    the other member row from conversation_members.
+          start = text.find('  async function loadContactInfo(')
+          end = text.find('  function refreshContactInfoRealtime()', start)
+          if start < 0 or end < 0:
+              raise SystemExit('loadContactInfo markers not found')
+
+          new_loader = '''  async function loadContactInfo(
+    authUserId: string
+  ) {
+    try {
+      const { data: myMemberships, error: myMembershipError } =
+        await supabase
+          .from("conversation_members")
+          .select("conversation_id")
+          .eq("user_id", authUserId);
+
+      if (myMembershipError) {
+        console.error("Load memberships error:", myMembershipError);
+        return;
+      }
+
+      const conversationIds = (myMemberships || []).map(
+        (item) => item.conversation_id
+      );
+
+      if (conversationIds.length === 0) {
+        return;
+      }
+
+      const { data: allMembers, error: allMembersError } =
+        await supabase
+          .from("conversation_members")
+          .select("conversation_id, user_id")
+          .in("conversation_id", conversationIds);
+
+      if (allMembersError) {
+        console.error(
+          "Load all members error; continuing from messages:",
+          allMembersError
+        );
+      }
+
+      const conversationToUser: Record<string, string> = {};
+
+      (allMembers || []).forEach((member) => {
+        if (member.user_id !== authUserId) {
+          conversationToUser[member.conversation_id] = member.user_id;
+        }
+      });
+
+      const { data: allMessages, error: messagesError } =
+        await supabase
+          .from("messages")
+          .select(
+            "id, conversation_id, sender_id, content, created_at, read_at, updated_at"
+          )
+          .in("conversation_id", conversationIds)
+          .order("created_at", { ascending: false });
+
+      if (messagesError) {
+        console.error("Load contact messages error:", messagesError);
+        return;
+      }
+
+      // Critical fallback: an incoming message already tells us exactly
+      // who the contact is. This avoids depending on a second member-row
+      // query which may be restricted by RLS.
+      (allMessages || []).forEach((message) => {
+        if (
+          message.sender_id !== authUserId &&
+          message.conversation_id
+        ) {
+          conversationToUser[message.conversation_id] =
+            message.sender_id;
+        }
+      });
+
+      const aggregatedInfo: Record<string, ContactInfo> = {};
+
+      Object.entries(conversationToUser).forEach(
+        ([conversationId, userId]) => {
+          const conversationMessages = (allMessages || []).filter(
+            (message) => message.conversation_id === conversationId
+          );
+
+          const unreadCount = conversationMessages.filter(
+            (message) =>
+              message.sender_id !== authUserId && !message.read_at
+          ).length;
+
+          const lastMessage =
+            conversationMessages.length > 0
+              ? conversationMessages[0]
+              : null;
+
+          if (!aggregatedInfo[userId]) {
+            aggregatedInfo[userId] = {
+              conversationId,
+              lastMessage: lastMessage?.content || null,
+              lastMessageAt: lastMessage?.created_at || null,
+              unreadCount,
+            };
+            return;
+          }
+
+          const existing = aggregatedInfo[userId];
+          const existingLastMessageAt = existing.lastMessageAt;
+          const currentLastMessageAt = lastMessage?.created_at || null;
+
+          existing.unreadCount += unreadCount;
+
+          if (
+            currentLastMessageAt &&
+            (!existingLastMessageAt ||
+              new Date(currentLastMessageAt).getTime() >
+                new Date(existingLastMessageAt).getTime())
+          ) {
+            existing.conversationId = conversationId;
+            existing.lastMessage = lastMessage?.content || null;
+            existing.lastMessageAt = currentLastMessageAt;
+          }
+        }
+      );
+
+      setContactInfo((previous) => {
+        const next = { ...previous };
+
+        Object.entries(aggregatedInfo).forEach(([userId, info]) => {
+          const existing = next[userId];
+
+          if (!existing) {
+            next[userId] = info;
+            return;
+          }
+
+          const existingTime = existing.lastMessageAt
+            ? new Date(existing.lastMessageAt).getTime()
+            : 0;
+          const incomingTime = info.lastMessageAt
+            ? new Date(info.lastMessageAt).getTime()
+            : 0;
+
+          if (incomingTime >= existingTime) {
+            next[userId] = { ...existing, ...info };
+          } else {
+            next[userId] = { ...info, ...existing };
+          }
+        });
+
+        return next;
+      });
+    } catch (error) {
+      console.error("Load contact info error:", error);
+    }
+  }
+
+'''
+          text = text[:start] + new_loader + text[end:]
+
+          # 2) The realtime INSERT already contains sender_id. Never query
+          #    conversation_members to discover the incoming contact.
+          old_start = text.find('            const {\n              data: conversationMembers,')
+          old_end = text.find('            await loadContactInfo(currentUserId);', old_start)
+          if old_start < 0 or old_end < 0:
+              raise SystemExit('realtime contact block not found')
+
+          realtime_block = '''            const incomingContactUserId =
+              newMessage.sender_id !== currentUserId
+                ? newMessage.sender_id
+                : null;
+
+            if (incomingContactUserId) {
+              setContactInfo((previous) => {
+                const existing = previous[incomingContactUserId];
+
+                return {
+                  ...previous,
+                  [incomingContactUserId]: {
+                    conversationId: newMessage.conversation_id,
+                    lastMessage: newMessage.content,
+                    lastMessageAt: newMessage.created_at,
+                    unreadCount: (existing?.unreadCount || 0) + 1,
+                  },
+                };
+              });
+            }
+
+'''
+          text = text[:old_start] + realtime_block + text[old_end:]
+
+          # 3) Download attachments through fetch/blob instead of opening
+          #    the public URL in a new browser tab.
+          old_download = '''  function downloadAttachment(attachment: MessageAttachment) {
+    const link = document.createElement("a");
+    link.href = attachment.url;
+    link.download = attachment.name;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+'''
+          new_download = '''  async function downloadAttachment(attachment: MessageAttachment) {
+    try {
+      const response = await fetch(attachment.url);
+
+      if (!response.ok) {
+        throw new Error(`Download gagal (${response.status}).`);
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = blobUrl;
+      link.download = attachment.name || "banda-chat-file";
+      link.style.display = "none";
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.setTimeout(() => {
+        URL.revokeObjectURL(blobUrl);
+      }, 1000);
+    } catch (error) {
+      console.error("Download attachment error:", error);
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "File gagal diunduh."
+      );
+    }
+  }
+'''
+          if old_download not in text:
+              raise SystemExit('downloadAttachment block not found')
+          text = text.replace(old_download, new_download, 1)
+
+          path.write_text(text, encoding='utf-8')
+          print('Patch applied successfully')
+
+      - name: Verify
+        shell: bash
+        run: |
+          grep -q 'message.sender_id !== authUserId' app/chat/page.tsx
+          grep -q 'const incomingContactUserId =' app/chat/page.tsx
+          grep -q 'const blob = await response.blob()' app/chat/page.tsx
+          echo 'Verification passed'
+
+      - name: Commit patch and remove one-time workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/chat/page.tsx
+          git rm .github/workflows/repair-auto-contact-final.yml
+          git commit -m "fix: automatic contacts from incoming messages [auto-contact-final]"
+          git push origin HEAD:master
