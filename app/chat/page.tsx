@@ -1105,7 +1105,6 @@ export default function ChatPage() {
         !myMemberships ||
         myMemberships.length === 0
       ) {
-        setContactInfo({});
         return;
       }
 
@@ -1271,9 +1270,42 @@ export default function ChatPage() {
         }
       );
 
-      setContactInfo(
-        aggregatedInfo
-      );
+      setContactInfo((previous) => {
+        const next = { ...previous };
+
+        Object.entries(aggregatedInfo).forEach(
+          ([userId, info]) => {
+            const existing = next[userId];
+
+            if (!existing) {
+              next[userId] = info;
+              return;
+            }
+
+            const existingTime = existing.lastMessageAt
+              ? new Date(existing.lastMessageAt).getTime()
+              : 0;
+
+            const incomingTime = info.lastMessageAt
+              ? new Date(info.lastMessageAt).getTime()
+              : 0;
+
+            if (incomingTime >= existingTime) {
+              next[userId] = {
+                ...existing,
+                ...info,
+              };
+            } else {
+              next[userId] = {
+                ...info,
+                ...existing,
+              };
+            }
+          }
+        );
+
+        return next;
+      });
     } catch (error) {
       console.error(
         "Load contact info error:",
