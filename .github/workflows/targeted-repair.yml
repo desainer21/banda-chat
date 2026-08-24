@@ -1,0 +1,93 @@
+name: Banda Chat targeted repair
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.head_commit.message != 'fix: targeted profile and group contact unread' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Apply targeted fixes
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('app/chat/page.tsx')
+          text = path.read_text()
+
+          text = text.replace(
+          '''type ContactInfo = {\n  conversationId: string | null;\n  lastMessage: string | null;\n  lastMessageAt: string | null;\n  unreadCount: number;\n};\n''',
+          '''type ContactInfo = {\n  conversationId: string | null;\n  lastMessage: string | null;\n  lastMessageAt: string | null;\n  unreadCount: number;\n};\n\ntype GroupContact = {\n  id: string;\n  name: string;\n  avatar_url: string | null;\n  unreadCount: number;\n};\n''')
+
+          text = text.replace(
+          '''  const [contactInfo, setContactInfo] =\n    useState<Record<string, ContactInfo>>({});\n''',
+          '''  const [contactInfo, setContactInfo] =\n    useState<Record<string, ContactInfo>>({});\n  const [groupContacts, setGroupContacts] = useState<GroupContact[]>([]);\n''')
+
+          text = text.replace(
+          '''      await loadContactInfo(\n        authUserId\n      );\n''',
+          '''      await loadContactInfo(\n        authUserId\n      );\n\n      await loadGroupContacts(authUserId);\n''', 1)
+
+          old = '''      const conversationIds =\n        myMemberships.map(\n          (item) =>\n            item.conversation_id\n        );\n\n      const {\n        data: allMembers,\n        error: allMembersError,\n      } =\n        await supabase\n          .from(\n            "conversation_members"\n          )\n          .select(\n            "conversation_id, user_id"\n          )\n          .in(\n            "conversation_id",\n            conversationIds\n          );'''
+          new = '''      const conversationIds =\n        myMemberships.map(\n          (item) =>\n            item.conversation_id\n        );\n\n      /* Chat pribadi saja. Keanggotaan grup tidak boleh masuk ke contactInfo. */\n      const { data: directConversations, error: directConversationError } =\n        await supabase\n          .from("conversations")\n          .select("id")\n          .in("id", conversationIds)\n          .eq("type", "direct");\n\n      if (directConversationError) {\n        console.error("Load direct conversations error:", directConversationError);\n        return;\n      }\n\n      const directConversationIds = (directConversations || []).map(\n        (item) => item.id\n      );\n\n      if (directConversationIds.length === 0) {\n        setContactInfo({});\n        return;\n      }\n\n      const {\n        data: allMembers,\n        error: allMembersError,\n      } =\n        await supabase\n          .from(\n            "conversation_members"\n          )\n          .select(\n            "conversation_id, user_id"\n          )\n          .in(\n            "conversation_id",\n            directConversationIds\n          );'''
+          if old not in text:
+              raise SystemExit('loadContactInfo member block not found')
+          text = text.replace(old, new, 1)
+
+          text = text.replace(
+          '''          .in(\n            "conversation_id",\n            conversationIds\n          )\n          .order(\n            "created_at",''',
+          '''          .in(\n            "conversation_id",\n            directConversationIds\n          )\n          .order(\n            "created_at",''', 1)
+
+          marker = '''  function refreshContactInfoRealtime() {\n    if (!currentUserId) {\n      return;\n    }\n\n    void loadContactInfo(\n      currentUserId\n    );\n\n    window.setTimeout(() => {\n      void loadContactInfo(\n        currentUserId\n      );\n    }, 300);\n  }\n'''
+          replacement = '''  async function loadGroupContacts(authUserId: string) {\n    try {\n      const { data: memberships, error: membershipError } = await supabase\n        .from("conversation_members")\n        .select("conversation_id")\n        .eq("user_id", authUserId);\n\n      if (membershipError) {\n        console.error("Load group memberships error:", membershipError);\n        return;\n      }\n\n      const ids = (memberships || []).map((item) => item.conversation_id);\n      if (!ids.length) {\n        setGroupContacts([]);\n        return;\n      }\n\n      const { data: groups, error: groupsError } = await supabase\n        .from("conversations")\n        .select("id, name, group_avatar_url, created_at")\n        .in("id", ids)\n        .eq("type", "group")\n        .order("created_at", { ascending: false });\n\n      if (groupsError) {\n        console.error("Load group contacts error:", groupsError);\n        return;\n      }\n\n      const { data: unreadRows, error: unreadError } = await supabase.rpc(\n        "get_banda_group_unread_counts"\n      );\n\n      if (unreadError) {\n        console.error("Load group unread error:", unreadError);\n      }\n\n      const unreadMap: Record<string, number> = {};\n      (unreadRows || []).forEach((row: { conversation_id: string; unread_count: number | string }) => {\n        unreadMap[row.conversation_id] = Number(row.unread_count) || 0;\n      });\n\n      setGroupContacts(\n        (groups || []).map((group) => ({\n          id: group.id,\n          name: group.name || "Grup Banda Chat",\n          avatar_url: group.group_avatar_url || null,\n          unreadCount: unreadMap[group.id] || 0,\n        }))\n      );\n    } catch (error) {\n      console.error("Load group contacts error:", error);\n    }\n  }\n\n  function refreshContactInfoRealtime() {\n    if (!currentUserId) {\n      return;\n    }\n\n    void loadContactInfo(currentUserId);\n    void loadGroupContacts(currentUserId);\n\n    window.setTimeout(() => {\n      void loadContactInfo(currentUserId);\n      void loadGroupContacts(currentUserId);\n    }, 300);\n  }\n'''
+          if marker not in text:
+              raise SystemExit('refreshContactInfoRealtime marker not found')
+          text = text.replace(marker, replacement, 1)
+
+          old_save = '''      const {\n        data: updatedProfile,\n        error,\n      } =\n        await supabase\n          .from("profiles")\n          .update({\n            full_name:\n              cleanName,\n            username:\n              cleanUsername,\n            avatar_url:\n              avatarUrl,\n          })\n          .eq(\n            "id",\n            profile.id\n          )\n          .select(\n            "id, full_name, username, avatar_url"\n          )\n          .single();\n\n      if (error) {\n        throw new Error(\n          error.message\n        );\n      }\n\n      if (\n        updatedProfile\n      ) {'''
+          new_save = '''      const {\n        data: updatedProfile,\n        error,\n      } =\n        await supabase\n          .from("profiles")\n          .upsert(\n            {\n              id: profile.id,\n              full_name: cleanName,\n              username: cleanUsername,\n              avatar_url: avatarUrl,\n            },\n            { onConflict: "id" }\n          )\n          .select(\n            "id, full_name, username, avatar_url"\n          )\n          .maybeSingle();\n\n      if (error) {\n        throw new Error(\n          error.message\n        );\n      }\n\n      if (!updatedProfile) {\n        throw new Error(\n          "Profil tidak ditemukan atau tidak dapat diperbarui. Silakan coba lagi."\n        );\n      }\n\n      {'''
+          if old_save not in text:
+              raise SystemExit('saveProfile block not found')
+          text = text.replace(old_save, new_save, 1)
+
+          old_user = '''        const {\n          data: existingUsername,\n          error: usernameError,\n        } =\n          await supabase\n            .from("profiles")\n            .select("id")\n            .eq(\n              "username",\n              cleanUsername\n            )\n            .neq(\n              "id",\n              profile.id\n            )\n            .maybeSingle();\n\n        if (usernameError) {\n          throw new Error(\n            usernameError.message\n          );\n        }\n\n        if (\n          existingUsername\n        ) {'''
+          new_user = '''        const {\n          data: existingUsernames,\n          error: usernameError,\n        } =\n          await supabase\n            .from("profiles")\n            .select("id")\n            .eq("username", cleanUsername)\n            .neq("id", profile.id)\n            .limit(1);\n\n        if (usernameError) {\n          throw new Error(\n            usernameError.message\n          );\n        }\n\n        if (existingUsernames && existingUsernames.length > 0) {'''
+          if old_user not in text:
+              raise SystemExit('username block not found')
+          text = text.replace(old_user, new_user, 1)
+
+          text = text.replace(
+          '''              {filteredUsers.length}\n            </span>''',
+          '''              {filteredUsers.length + groupContacts.length}\n            </span>''', 1)
+
+          text = text.replace(
+          '''              {filteredUsers.length ===\n                0 ? (''',
+          '''              {filteredUsers.length === 0 && groupContacts.length === 0 ? (''', 1)
+
+          group_block = '''                <div className="space-y-2">\n                  {filteredUsers.map(\n'''
+          group_block_new = '''                <div className="space-y-2">\n                  {groupContacts.map((group) => (\n                    <button\n                      key={`group-${group.id}`}\n                      type="button"\n                      onClick={() => router.push(`/chat/grup?group=${encodeURIComponent(group.id)}`)}\n                      className="w-full rounded-2xl border border-slate-100 bg-white p-3 text-left transition hover:border-blue-100 hover:bg-blue-50/50 hover:shadow-sm"\n                    >\n                      <div className="flex items-center gap-3">\n                        {group.avatar_url ? (\n                          <img src={group.avatar_url} alt={group.name} className="h-11 w-11 rounded-full object-cover" />\n                        ) : (\n                          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-green-500 font-bold text-white">👥</div>\n                        )}\n                        <div className="min-w-0 flex-1">\n                          <div className="flex items-center justify-between gap-2">\n                            <p className="truncate text-sm font-semibold text-slate-800">{group.name}</p>\n                            {group.unreadCount > 0 && (\n                              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-green-500 px-1 text-[10px] font-bold text-white shadow-sm">\n                                {group.unreadCount > 99 ? "99+" : group.unreadCount}\n                              </span>\n                            )}\n                          </div>\n                          <p className="mt-1 truncate text-xs text-slate-400">Grup · buka percakapan</p>\n                        </div>\n                      </div>\n                    </button>\n                  ))}\n\n                  {filteredUsers.map(\n'''
+          if group_block not in text:
+              raise SystemExit('sidebar map block not found')
+          text = text.replace(group_block, group_block_new, 1)
+
+          path.write_text(text)
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/chat/page.tsx
+          if git diff --cached --quiet; then
+            echo "No changes needed"
+            exit 0
+          fi
+          git commit -m "fix: targeted profile and group contact unread"
+          git push origin master
