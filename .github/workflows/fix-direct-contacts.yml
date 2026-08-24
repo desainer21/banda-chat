@@ -1,0 +1,95 @@
+name: Fix direct contacts loader
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]' && github.event.head_commit.message != 'fix: load direct contacts through rpc'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch loadContactInfo
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path('app/chat/page.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          start_match = re.search(r'(?m)^\s*async function loadContactInfo\s*\(.*?\)\s*\{', text)
+          if not start_match:
+              raise SystemExit('loadContactInfo was not found')
+
+          start = start_match.start()
+
+          next_match = re.search(r'(?m)^\s*(?:async )?function\s+(?!loadContactInfo\b)[A-Za-z_$][\w$]*\s*\(', text[start_match.end():])
+          if not next_match:
+              raise SystemExit('Could not find the function following loadContactInfo')
+
+          end = start_match.end() + next_match.start()
+
+          replacement = '''
+  async function loadContactInfo(authUserId: string) {
+    try {
+      const { data, error } = await supabase.rpc(
+        "get_my_direct_contacts"
+      );
+
+      if (error) {
+        console.error("Load direct contacts RPC error:", error);
+        return;
+      }
+
+      const aggregatedInfo: Record<string, ContactInfo> = {};
+
+      (data || []).forEach((row: {
+        user_id: string;
+        conversation_id: string;
+        last_message: string | null;
+        last_message_at: string | null;
+        unread_count: number | string | null;
+      }) => {
+        if (!row.user_id || row.user_id === authUserId) {
+          return;
+        }
+
+        aggregatedInfo[row.user_id] = {
+          conversationId: row.conversation_id,
+          lastMessage: row.last_message,
+          lastMessageAt: row.last_message_at,
+          unreadCount: Number(row.unread_count || 0),
+        };
+      });
+
+      setContactInfo(aggregatedInfo);
+    } catch (error) {
+      console.error("Load contact info error:", error);
+    }
+  }
+'''
+
+          path.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+
+      - name: Commit patched page
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/chat/page.tsx
+          if git diff --cached --quiet; then
+            echo "page.tsx already patched"
+            exit 0
+          fi
+          git commit -m "fix: load direct contacts through rpc"
+          git push
