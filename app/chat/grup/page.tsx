@@ -19,6 +19,7 @@ export default function GroupsPage() {
   const [members, setMembers] = useState<Profile[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [groupUnread, setGroupUnread] = useState<Record<string, number>>({});
+  const [groupOnlineUserIds, setGroupOnlineUserIds] = useState<string[]>([]);
   const [text, setText] = useState("");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -41,6 +42,7 @@ export default function GroupsPage() {
 
   const isAdmin = !!selectedGroup && selectedGroup.created_by === userId;
   const availableContacts = useMemo(() => contacts.filter((c) => !members.some((m) => m.id === c.id)), [contacts, members]);
+  const onlineMembers = useMemo(() => members.filter((m) => groupOnlineUserIds.includes(m.id)), [members, groupOnlineUserIds]);
 
   useEffect(() => {
     let mounted = true;
@@ -65,6 +67,49 @@ export default function GroupsPage() {
     })();
     return () => { mounted = false; };
   }, [router]);
+
+  useEffect(() => {
+    if (!selectedGroup || !userId) {
+      setGroupOnlineUserIds([]);
+      return;
+    }
+
+    let mounted = true;
+    const presenceChannel = supabase.channel(`group-presence-${selectedGroup.id}`, {
+      config: { presence: { key: userId } },
+    });
+
+    const updatePresence = () => {
+      if (!mounted) return;
+      const state = presenceChannel.presenceState<{ user_id: string }>();
+      const ids = Object.values(state).flatMap((entries) =>
+        entries.map((entry) => entry.user_id).filter(Boolean)
+      );
+      setGroupOnlineUserIds([...new Set(ids)]);
+    };
+
+    presenceChannel
+      .on("presence", { event: "sync" }, updatePresence)
+      .on("presence", { event: "join" }, updatePresence)
+      .on("presence", { event: "leave" }, updatePresence)
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          const { error: trackError } = await presenceChannel.track({
+            user_id: userId,
+            group_id: selectedGroup.id,
+          });
+          if (trackError) console.error("Group presence track error:", trackError);
+          updatePresence();
+        }
+      });
+
+    return () => {
+      mounted = false;
+      setGroupOnlineUserIds([]);
+      void presenceChannel.untrack();
+      void supabase.removeChannel(presenceChannel);
+    };
+  }, [selectedGroup?.id, userId]);
 
   useEffect(() => {
     if (!selectedGroup) return;
@@ -282,7 +327,7 @@ export default function GroupsPage() {
 
           <section className="bg-white border border-slate-200 rounded-2xl min-h-[70vh] flex flex-col overflow-hidden">
             {!selectedGroup ? <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-500"><div className="text-5xl mb-3">👥</div><h2 className="font-bold text-lg text-slate-700">Pilih grup</h2><p className="text-sm mt-1">Atau buat grup baru untuk mulai mengobrol bersama beberapa teman.</p></div> : <>
-              <div className="p-4 border-b flex items-center justify-between gap-3"><div className="flex items-center gap-3 min-w-0"><div className="h-12 w-12 shrink-0 overflow-hidden rounded-full bg-green-100 flex items-center justify-center">{selectedGroup.group_avatar_url ? <img src={selectedGroup.group_avatar_url} alt={selectedGroup.name || "Grup"} className="h-full w-full object-cover" /> : <span className="text-xl">👥</span>}</div><div className="min-w-0"><h2 className="font-bold truncate">{selectedGroup.name}</h2><p className="text-xs text-slate-500">{members.length} anggota{isAdmin ? " • Anda admin" : ""}</p></div></div><div className="flex gap-2"><button onClick={() => setShowInvite(true)} className="px-3 py-2 rounded-xl border text-sm">🔗 Undang</button>{isAdmin && <button onClick={openEditGroup} className="px-3 py-2 rounded-xl border text-sm">✏️ Edit Grup</button>}<button onClick={() => setShowMembers(true)} className="px-3 py-2 rounded-xl border text-sm">👤 Anggota</button></div></div>
+              <div className="p-4 border-b flex items-center justify-between gap-3"><div className="flex items-center gap-3 min-w-0"><div className="h-12 w-12 shrink-0 overflow-hidden rounded-full bg-green-100 flex items-center justify-center">{selectedGroup.group_avatar_url ? <img src={selectedGroup.group_avatar_url} alt={selectedGroup.name || "Grup"} className="h-full w-full object-cover" /> : <span className="text-xl">👥</span>}</div><div className="min-w-0"><h2 className="font-bold truncate">{selectedGroup.name}</h2><p className="text-xs text-slate-500">{members.length} anggota{onlineMembers.length ? ` • ${onlineMembers.length} online` : ""}{isAdmin ? " • Anda admin" : ""}</p></div></div><div className="flex gap-2"><button onClick={() => setShowInvite(true)} className="px-3 py-2 rounded-xl border text-sm">🔗 Undang</button>{isAdmin && <button onClick={openEditGroup} className="px-3 py-2 rounded-xl border text-sm">✏️ Edit Grup</button>}<button onClick={() => setShowMembers(true)} className="px-3 py-2 rounded-xl border text-sm">👤 Anggota</button></div></div>
               <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50 min-h-[48vh]">{!messages.length && <div className="text-center text-sm text-slate-500 py-10">Belum ada postingan di grup ini.</div>}{messages.map((m) => { const sender = members.find((x) => x.id === m.sender_id); return <div key={m.id} className={`flex ${m.sender_id === userId ? "justify-end" : "justify-start"}`}><div className={`max-w-[85%] rounded-2xl px-4 py-2 ${m.sender_id === userId ? "bg-blue-600 text-white" : "bg-white border"}`}><div className={`text-[11px] mb-1 ${m.sender_id === userId ? "text-blue-100" : "text-slate-500"}`}>{m.sender_id === userId ? "Anda" : displayName(sender || { id: m.sender_id, full_name: "Pengguna", username: null, avatar_url: null })}</div><div className="whitespace-pre-wrap break-words text-sm">{m.content}</div><div className={`text-[10px] text-right mt-1 ${m.sender_id === userId ? "text-blue-100" : "text-slate-400"}`}>{formatTime(m.created_at)}{m.updated_at && m.updated_at !== m.created_at ? " • diedit" : ""}</div></div></div>})}</div>
               <div className="p-3 border-t">{selectedGroup.members_can_post === false && !isAdmin && <div className="text-xs text-amber-700 bg-amber-50 rounded-xl p-2 mb-2">Admin sedang membatasi postingan. Hanya admin yang dapat mengirim.</div>}<div className="flex gap-2"><textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendMessage(); } }} disabled={selectedGroup.members_can_post === false && !isAdmin} placeholder="Tulis pesan/postingan..." className="flex-1 min-h-11 max-h-32 resize-none rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200" /><button onClick={() => void sendMessage()} disabled={!text.trim() || sending || (selectedGroup.members_can_post === false && !isAdmin)} className="px-4 rounded-xl bg-blue-600 text-white font-semibold disabled:opacity-50">Kirim</button></div></div>
             </>}
@@ -296,7 +341,7 @@ export default function GroupsPage() {
 
       {showInvite && selectedGroup && <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-2xl w-full max-w-md p-5"><div className="flex justify-between"><h3 className="font-bold">Undang ke grup</h3><button onClick={() => setShowInvite(false)}>✕</button></div><p className="text-sm text-slate-500 mt-2">Kirim link ini kepada pengguna yang ingin bergabung. Grup tidak akan terlihat sebelum mereka membuka link dan bergabung.</p><div className="mt-4 p-3 rounded-xl bg-slate-100 text-xs break-all">{window.location.origin}/chat/grup/join?code={selectedGroup.invite_code}</div><div className="flex gap-2 mt-3"><button onClick={() => void copyInvite()} className="flex-1 bg-blue-600 text-white rounded-xl py-2 font-semibold">{inviteCopied ? "Tersalin ✓" : "Salin Link"}</button><button onClick={() => setShowInvite(false)} className="px-4 border rounded-xl">Tutup</button></div></div></div>}
 
-      {showMembers && selectedGroup && <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto p-5"><div className="flex justify-between items-center"><div><h3 className="font-bold text-lg">Anggota Grup</h3><p className="text-xs text-slate-500">{members.length} anggota</p></div><button onClick={() => setShowMembers(false)}>✕</button></div>{isAdmin && <div className="mt-4 p-3 rounded-xl bg-slate-50 border"><div className="font-semibold text-sm">Pengaturan postingan</div><label className="flex items-center gap-2 mt-2 text-sm"><input type="checkbox" checked={selectedGroup.members_can_post !== false} onChange={() => void togglePosts()} /> Izinkan anggota mengirim pesan/postingan</label></div>}<div className="mt-4"><div className="font-semibold text-sm mb-2">Anggota</div>{members.map((m) => <div key={m.id} className="flex items-center justify-between py-2 border-b"><div><div className="font-medium text-sm">{displayName(m)} {m.id === selectedGroup.created_by && <span className="text-xs text-blue-600">• Admin</span>}</div>{m.username && <div className="text-xs text-slate-500">@{m.username}</div>}</div>{isAdmin && m.id !== userId && <button disabled={removingId === m.id} onClick={() => void removeMember(m)} className="text-xs text-red-600">{removingId === m.id ? "..." : "Keluarkan"}</button>}</div>)}</div>{isAdmin && <div className="mt-5"><div className="font-semibold text-sm mb-2">Tambahkan dari kontak</div><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari nama kontak" className="w-full border rounded-xl px-3 py-2 mb-2" />{availableContacts.filter((c) => `${c.full_name} ${c.username || ""}`.toLowerCase().includes(search.toLowerCase())).slice(0, 20).map((c) => <div key={c.id} className="flex items-center justify-between py-2 border-b"><div><div className="text-sm font-medium">{displayName(c)}</div>{c.username && <div className="text-xs text-slate-500">@{c.username}</div>}</div><button disabled={addingId === c.id} onClick={() => void addMember(c)} className="px-3 py-1 rounded-lg bg-blue-600 text-white text-xs">{addingId === c.id ? "..." : "Tambah"}</button></div>)}</div>}</div></div>}
+      {showMembers && selectedGroup && <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto p-5"><div className="flex justify-between items-center"><div><h3 className="font-bold text-lg">Anggota Grup</h3><p className="text-xs text-slate-500">{members.length} anggota • {onlineMembers.length} sedang online di grup</p></div><button onClick={() => setShowMembers(false)}>✕</button></div>{isAdmin && <div className="mt-4 p-3 rounded-xl bg-slate-50 border"><div className="font-semibold text-sm">Pengaturan postingan</div><label className="flex items-center gap-2 mt-2 text-sm"><input type="checkbox" checked={selectedGroup.members_can_post !== false} onChange={() => void togglePosts()} /> Izinkan anggota mengirim pesan/postingan</label></div>}<div className="mt-4"><div className="font-semibold text-sm mb-2">Status anggota</div>{members.map((m) => { const isOnline = groupOnlineUserIds.includes(m.id); return <div key={m.id} className="flex items-center justify-between py-2 border-b"><div className="flex items-center gap-3 min-w-0"><div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full bg-slate-200 flex items-center justify-center">{m.avatar_url ? <img src={m.avatar_url} alt={displayName(m)} className="h-full w-full object-cover" /> : <span className="text-sm font-bold text-slate-500">{displayName(m).charAt(0).toUpperCase()}</span>}<span className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${isOnline ? "bg-green-500" : "bg-slate-300"}`} /></div><div className="min-w-0"><div className="font-medium text-sm truncate">{displayName(m)} {m.id === selectedGroup.created_by && <span className="text-xs text-blue-600">• Admin</span>}</div><div className={`text-xs ${isOnline ? "text-green-600" : "text-slate-400"}`}>{isOnline ? "Online di grup" : "Offline"}</div>{m.username && <div className="text-xs text-slate-500">@{m.username}</div>}</div></div>{isAdmin && m.id !== userId && <button disabled={removingId === m.id} onClick={() => void removeMember(m)} className="text-xs text-red-600">{removingId === m.id ? "..." : "Keluarkan"}</button>}</div>})}</div>{isAdmin && <div className="mt-5"><div className="font-semibold text-sm mb-2">Tambahkan dari kontak</div><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari nama kontak" className="w-full border rounded-xl px-3 py-2 mb-2" />{availableContacts.filter((c) => `${c.full_name} ${c.username || ""}`.toLowerCase().includes(search.toLowerCase())).slice(0, 20).map((c) => <div key={c.id} className="flex items-center justify-between py-2 border-b"><div><div className="text-sm font-medium">{displayName(c)}</div>{c.username && <div className="text-xs text-slate-500">@{c.username}</div>}</div><button disabled={addingId === c.id} onClick={() => void addMember(c)} className="px-3 py-1 rounded-lg bg-blue-600 text-white text-xs">{addingId === c.id ? "..." : "Tambah"}</button></div>)}</div>}</div></div>}
     </main>
   );
 }
