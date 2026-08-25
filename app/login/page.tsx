@@ -2,6 +2,7 @@
 
 import {
   FormEvent,
+  Suspense,
   useEffect,
   useState,
 } from "react";
@@ -12,7 +13,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import BandaLogo from "@/components/BandaLogo";
 import { supabase } from "@/lib/supabase";
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
   const params = useSearchParams();
 
@@ -171,5 +172,22 @@ export default function LoginPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
+          <div className="text-center">
+            <BandaLogo size={72} />
+            <p className="mt-4 text-sm text-slate-500">Memuat halaman login...</p>
+          </div>
+        </main>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }
