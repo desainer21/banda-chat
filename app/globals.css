@@ -5,18 +5,25 @@
 @media (prefers-color-scheme: dark) { :root { --background: #0a0a0a; --foreground: #ededed; } }
 body { background: var(--background); color: var(--foreground); font-family: Arial, Helvetica, sans-serif; }
 
-/* Desktop remains untouched. Mobile-only layout below. */
+/* Desktop is unchanged. All rules below are mobile-only. */
 @media (max-width: 640px) {
-  main > div > header { display:grid !important; grid-template-columns:minmax(0,1fr) auto !important; align-items:center !important; gap:6px !important; padding:6px 8px !important; min-height:0 !important; }
+  main > div > header {
+    display:grid !important;
+    grid-template-columns:minmax(0,1fr) auto !important;
+    align-items:center !important;
+    gap:6px !important;
+    padding:6px 8px !important;
+    min-height:0 !important;
+  }
   main > div > header > div:first-child { min-width:0 !important; display:flex !important; align-items:center !important; gap:7px !important; }
   main > div > header h1, main > div > header .text-lg { font-size:12px !important; line-height:1.05 !important; margin:0 !important; white-space:nowrap !important; }
   main > div > header p, main > div > header .text-xs { font-size:8px !important; line-height:1.05 !important; margin:1px 0 0 !important; white-space:nowrap !important; overflow:hidden !important; text-overflow:ellipsis !important; }
   main > div > header > div:last-child { display:flex !important; align-items:center !important; justify-content:flex-end !important; gap:3px !important; white-space:nowrap !important; }
   main > div > header a, main > div > header button { padding:4px 5px !important; font-size:8px !important; line-height:1 !important; white-space:nowrap !important; }
 
-  main > div > div.grid { margin-top:4px !important; gap:4px !important; position:relative !important; }
+  main > div > div.grid { margin-top:4px !important; gap:4px !important; }
 
-  /* The group list remains the single visible identity: photo + name + posting status. */
+  /* Keep the group list intact. */
   main > div > div.grid > aside { max-height:19vh !important; overflow:hidden !important; }
   main > div > div.grid > aside > div:first-child { padding:5px 8px !important; }
   main > div > div.grid > aside > div:first-child .font-bold { font-size:12px !important; line-height:1.05 !important; }
@@ -27,61 +34,107 @@ body { background: var(--background); color: var(--foreground); font-family: Ari
   main > div > div.grid > aside button .font-semibold { font-size:13px !important; line-height:1.15 !important; }
   main > div > div.grid > aside button .text-xs.text-slate-500.mt-1 { display:block !important; font-size:9px !important; line-height:1.1 !important; margin-top:3px !important; }
 
-  /* Keep the old chat header out of the message stream. */
+  /* REAL mobile group header: normal flex row, never fixed/absolute/translated. */
   main > div > div.grid > section > div.group-mobile-header {
-    position:absolute !important;
-    left:0 !important;
-    top:0 !important;
-    width:0 !important;
-    height:0 !important;
-    min-height:0 !important;
-    padding:0 !important;
+    display:flex !important;
+    position:relative !important;
+    inset:auto !important;
+    width:100% !important;
+    height:auto !important;
+    min-height:60px !important;
+    padding:8px 10px !important;
     margin:0 !important;
     border:0 !important;
+    border-bottom:1px solid #e2e8f0 !important;
     overflow:visible !important;
-    z-index:100 !important;
+    z-index:20 !important;
+    align-items:center !important;
+    justify-content:space-between !important;
+    gap:8px !important;
+    background:#ffffff !important;
   }
-  main > div > div.grid > section > div.group-mobile-header > div:first-child,
+
+  /* Group photo + name stay together on the left. */
+  main > div > div.grid > section > div.group-mobile-header > div:first-child {
+    display:flex !important;
+    flex:1 1 auto !important;
+    min-width:0 !important;
+    align-items:center !important;
+    gap:9px !important;
+  }
+  main > div > div.grid > section > div.group-mobile-header > div:first-child > div:first-child {
+    width:42px !important;
+    height:42px !important;
+    min-width:42px !important;
+    min-height:42px !important;
+    border-radius:9999px !important;
+    overflow:hidden !important;
+  }
+  main > div > div.grid > section > div.group-mobile-header > div:first-child h2 {
+    display:block !important;
+    font-size:14px !important;
+    line-height:1.2 !important;
+    margin:0 !important;
+    white-space:nowrap !important;
+    overflow:hidden !important;
+    text-overflow:ellipsis !important;
+  }
+  main > div > div.grid > section > div.group-mobile-header > div:first-child p {
+    display:block !important;
+    font-size:9px !important;
+    line-height:1.2 !important;
+    margin-top:2px !important;
+    white-space:nowrap !important;
+    overflow:hidden !important;
+    text-overflow:ellipsis !important;
+  }
+
+  /* Desktop actions are hidden on phones. */
   main > div > div.grid > section > div.group-mobile-header > .group-desktop-actions { display:none !important; }
 
-  /* Three dots are anchored to the selected group row itself, not to the chat area. */
+  /* Three-dot button is a normal flex item at the far right of THIS header row. */
   main > div > div.grid > section > div.group-mobile-header > .group-mobile-actions {
     display:block !important;
-    position:fixed !important;
-    top:calc(5px + 19vh + 5px + 20px) !important;
-    right:12px !important;
-    left:auto !important;
-    width:30px !important;
-    height:30px !important;
-    z-index:200 !important;
+    position:relative !important;
+    inset:auto !important;
+    flex:0 0 32px !important;
+    width:32px !important;
+    height:32px !important;
+    margin:0 !important;
+    padding:0 !important;
+    overflow:visible !important;
+    z-index:30 !important;
   }
   main > div > div.grid > section > div.group-mobile-header > .group-mobile-actions > button {
     display:flex !important;
     align-items:center !important;
     justify-content:center !important;
-    width:28px !important;
-    height:28px !important;
+    width:32px !important;
+    height:32px !important;
     padding:0 !important;
     margin:0 !important;
     border:1px solid #e2e8f0 !important;
     border-radius:50% !important;
     background:#ffffff !important;
     color:#334155 !important;
-    font-size:16px !important;
+    font-size:18px !important;
     line-height:1 !important;
-    box-shadow:0 1px 4px rgba(0,0,0,.10) !important;
+    box-shadow:0 1px 3px rgba(0,0,0,.08) !important;
   }
 
+  /* Dropdown is anchored to the button, not the screen. */
   main > div > div.grid > section > div.group-mobile-header > .group-mobile-actions > div {
     position:absolute !important;
+    top:36px !important;
     right:0 !important;
-    top:32px !important;
+    left:auto !important;
     width:145px !important;
     padding:4px !important;
     border:1px solid #e2e8f0 !important;
     border-radius:10px !important;
     background:#ffffff !important;
     box-shadow:0 8px 24px rgba(15,23,42,.14) !important;
+    z-index:100 !important;
   }
   main > div > div.grid > section > div.group-mobile-header > .group-mobile-actions > div button {
     display:block !important;
@@ -99,7 +152,7 @@ body { background: var(--background); color: var(--foreground); font-family: Ari
     white-space:nowrap !important;
   }
 
-  /* Messages keep the full remaining height. */
+  /* Keep the chat panel and composer large. */
   main > div > div.grid > section {
     min-height:0 !important;
     height:calc(100dvh - 155px) !important;
@@ -120,7 +173,7 @@ body { background: var(--background); color: var(--foreground); font-family: Ari
     padding:5px !important;
     position:sticky !important;
     bottom:0 !important;
-    background:white !important;
+    background:#ffffff !important;
     z-index:10 !important;
   }
 }
