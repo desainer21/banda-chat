@@ -42,6 +42,7 @@ export default function GroupsPage() {
   const [editAvatarPreview, setEditAvatarPreview] = useState<string | null>(null);
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const remoteTypingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const isAdmin = !!selectedGroup && selectedGroup.created_by === userId;
   const availableContacts = useMemo(() => contacts.filter((c) => !members.some((m) => m.id === c.id)), [contacts, members]);
@@ -122,16 +123,33 @@ export default function GroupsPage() {
       .on("broadcast", { event: "typing" }, ({ payload }) => {
         const senderId = typeof payload?.user_id === "string" ? payload.user_id : "";
         if (!senderId || senderId === userId) return;
+
+        if (remoteTypingTimersRef.current[senderId]) {
+          clearTimeout(remoteTypingTimersRef.current[senderId]);
+          delete remoteTypingTimersRef.current[senderId];
+        }
+
         setTypingUserIds((prev) => {
           if (payload?.is_typing === true) return prev.includes(senderId) ? prev : [...prev, senderId];
           return prev.filter((id) => id !== senderId);
         });
+
+        // Jangan biarkan indikator mengetik menggantung jika paket "stop"
+        // terlewat karena koneksi realtime berubah.
+        if (payload?.is_typing === true) {
+          remoteTypingTimersRef.current[senderId] = setTimeout(() => {
+            setTypingUserIds((prev) => prev.filter((id) => id !== senderId));
+            delete remoteTypingTimersRef.current[senderId];
+          }, 2500);
+        }
       })
       .subscribe();
 
     return () => {
       if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
       typingStopTimerRef.current = null;
+      Object.values(remoteTypingTimersRef.current).forEach((timer) => clearTimeout(timer));
+      remoteTypingTimersRef.current = {};
       setTypingUserIds([]);
       if (typingChannelRef.current === channel) typingChannelRef.current = null;
       void channel.send({ type: "broadcast", event: "typing", payload: { user_id: userId, is_typing: false } });
@@ -145,12 +163,20 @@ export default function GroupsPage() {
     loadMessages(selectedGroup.id);
     void markGroupRead(selectedGroup.id);
     setGroupUnread((prev) => ({ ...prev, [selectedGroup.id]: 0 }));
+
     const channel = supabase.channel(`group-messages-${selectedGroup.id}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${selectedGroup.id}` }, async (payload) => {
         const message = payload.new as Message;
         setMessages((prev) => prev.some((m) => m.id === message.id) ? prev : [...prev, message]);
+
+        // Jika pesan sudah masuk, indikator mengetik pengirim harus langsung hilang.
         if (message.sender_id !== userId) {
-          if (message.conversation_id === selectedGroup.id) await markGroupRead(selectedGroup.id);
+          if (remoteTypingTimersRef.current[message.sender_id]) {
+            clearTimeout(remoteTypingTimersRef.current[message.sender_id]);
+            delete remoteTypingTimersRef.current[message.sender_id];
+          }
+          setTypingUserIds((prev) => prev.filter((id) => id !== message.sender_id));
+          await markGroupRead(selectedGroup.id);
           void loadUnreadCounts();
         }
       })
@@ -159,8 +185,20 @@ export default function GroupsPage() {
         setMessages((prev) => prev.map((m) => m.id === message.id ? message : m));
       })
       .subscribe();
+
     return () => { void supabase.removeChannel(channel); };
   }, [selectedGroup?.id, userId]);
+
+  // Fallback sinkronisasi ringan. Realtime tetap menjadi jalur utama,
+  // tetapi polling memastikan pesan tetap muncul jika event Postgres Realtime
+  // tidak terkirim ke salah satu client karena perubahan koneksi/RLS.
+  useEffect(() => {
+    if (!selectedGroup) return;
+    const timer = setInterval(() => {
+      void loadMessages(selectedGroup.id);
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [selectedGroup?.id]);
 
   async function loadGroups() {
     const { data, error } = await supabase.from("conversations").select("id,type,name,created_by,created_at,invite_code,members_can_post,group_description,group_avatar_url").eq("type", "group").order("created_at", { ascending: false });
@@ -206,7 +244,7 @@ export default function GroupsPage() {
 
   async function loadMessages(groupId: string) {
     const { data, error: messageError } = await supabase.from("messages").select("id,conversation_id,sender_id,content,created_at,updated_at").eq("conversation_id", groupId).order("created_at", { ascending: true }).limit(200);
-    if (messageError) { setError(messageError.message); return; }
+    if (messageError) { console.error("Load group messages error:", messageError); return; }
     setMessages((data || []) as Message[]);
   }
 
