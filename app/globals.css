@@ -5,7 +5,7 @@
 @media (prefers-color-scheme: dark) { :root { --background: #0a0a0a; --foreground: #ededed; } }
 body { background: var(--background); color: var(--foreground); font-family: Arial, Helvetica, sans-serif; }
 
-/* Desktop and all group logic remain untouched. Mobile-only presentation below. */
+/* Desktop is untouched. Everything below is mobile-only. */
 @media (max-width: 640px) {
   main > div > header { display:grid !important; grid-template-columns:minmax(0,1fr) auto !important; align-items:center !important; gap:6px !important; padding:6px 8px !important; min-height:0 !important; }
   main > div > header > div:first-child { min-width:0 !important; display:flex !important; align-items:center !important; gap:7px !important; }
@@ -15,7 +15,7 @@ body { background: var(--background); color: var(--foreground); font-family: Ari
   main > div > header a, main > div > header button { padding:4px 5px !important; font-size:8px !important; line-height:1 !important; white-space:nowrap !important; }
   main > div > div.grid { margin-top:4px !important; gap:4px !important; }
 
-  /* Group list remains unchanged functionally, including "Anggota dapat posting". */
+  /* Group list stays intact, including photo, name and "Anggota dapat posting". */
   main > div > div.grid > aside { max-height:18vh !important; overflow:hidden !important; }
   main > div > div.grid > aside > div:first-child { padding:5px 8px !important; }
   main > div > div.grid > aside > div:first-child .font-bold { font-size:12px !important; line-height:1.05 !important; }
@@ -26,50 +26,18 @@ body { background: var(--background); color: var(--foreground); font-family: Ari
   main > div > div.grid > aside button .font-semibold { font-size:11px !important; line-height:1.05 !important; }
   main > div > div.grid > aside button .text-xs.text-slate-500.mt-1 { display:block !important; font-size:8px !important; line-height:1.05 !important; margin-top:1px !important; }
 
-  /* Keep chat area tall. */
-  main > div > div.grid:has(> aside button.bg-blue-50) > section { min-height:0 !important; height:calc(100dvh - 150px) !important; max-height:calc(100dvh - 150px) !important; }
-  main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child { position:relative !important; height:0 !important; min-height:0 !important; padding:0 !important; margin:0 !important; border:0 !important; overflow:visible !important; z-index:20 !important; }
-
-  /* The selected chat's duplicate photo/name remains hidden; the single identity is the group-list card. */
-  main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child > div:first-child > div:first-child { display:none !important; }
-  main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child > div:first-child > div:first-child > div:nth-child(2) { display:none !important; }
-
-  /* Put the existing functional Invite/Members buttons beside the selected group name. */
-  main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child > div:first-child > div:last-child {
-    position:absolute !important;
-    top:0 !important;
-    right:7px !important;
-    display:flex !important;
-    align-items:center !important;
-    gap:3px !important;
-    flex-wrap:nowrap !important;
-    width:auto !important;
-    margin:0 !important;
-    padding:0 !important;
-    background:transparent !important;
-    transform:translateY(-82px) !important;
-    z-index:100 !important;
-    pointer-events:auto !important;
-  }
-  main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child > div:first-child > div:last-child button {
-    display:inline-flex !important;
-    align-items:center !important;
-    justify-content:center !important;
-    width:auto !important;
-    min-width:0 !important;
-    height:18px !important;
-    max-height:18px !important;
-    padding:2px 4px !important;
-    margin:0 !important;
-    font-size:6px !important;
-    font-weight:500 !important;
-    line-height:1 !important;
-    white-space:nowrap !important;
-    border-radius:5px !important;
-    box-shadow:0 1px 2px rgba(0,0,0,.05) !important;
+  /* The selected chat header itself is removed from the mobile layout. This prevents
+     its buttons from ever appearing above or inside the message stream. */
+  main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child {
+    display:none !important;
   }
 
-  /* Keep message content completely below the compact group-card/action row. */
+  /* Message panel starts directly under the group list and owns the available height. */
+  main > div > div.grid:has(> aside button.bg-blue-50) > section {
+    min-height:0 !important;
+    height:calc(100dvh - 150px) !important;
+    max-height:calc(100dvh - 150px) !important;
+  }
   main > div > div.grid:has(> aside button.bg-blue-50) > section > div.flex-1 {
     min-height:0 !important;
     flex:1 1 auto !important;
@@ -77,6 +45,12 @@ body { background: var(--background); color: var(--foreground); font-family: Ari
     padding:6px !important;
     margin-top:0 !important;
     border-top:0 !important;
+  }
+
+  /* Hide the action controls on mobile in their old DOM position. The group list
+     remains the single clean identity block; no floating/overlay controls are used. */
+  main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child > div:first-child > div:last-child {
+    display:none !important;
   }
 
   main > div > div.grid:has(> aside button.bg-blue-50) > section > div.p-3 {
