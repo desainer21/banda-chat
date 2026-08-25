@@ -34,11 +34,11 @@ body { background: var(--background); color: var(--foreground); font-family: Ari
   main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child > div:first-child > div:first-child { display:none !important; }
   main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child > div:first-child > div:first-child > div:nth-child(2) { display:none !important; }
 
-  /* Put Invite and Members beside the group name in the group-list card. */
+  /* Put the existing functional Invite/Members buttons beside the selected group name. */
   main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child > div:first-child > div:last-child {
     position:absolute !important;
     top:0 !important;
-    right:0 !important;
+    right:7px !important;
     display:flex !important;
     align-items:center !important;
     gap:3px !important;
@@ -47,24 +47,29 @@ body { background: var(--background); color: var(--foreground); font-family: Ari
     margin:0 !important;
     padding:0 !important;
     background:transparent !important;
-    transform:translateY(-33px) !important;
-    z-index:30 !important;
+    transform:translateY(-82px) !important;
+    z-index:100 !important;
+    pointer-events:auto !important;
   }
   main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child > div:first-child > div:last-child button {
     display:inline-flex !important;
     align-items:center !important;
     justify-content:center !important;
-    height:20px !important;
-    padding:2px 5px !important;
+    width:auto !important;
+    min-width:0 !important;
+    height:18px !important;
+    max-height:18px !important;
+    padding:2px 4px !important;
     margin:0 !important;
-    font-size:7px !important;
+    font-size:6px !important;
+    font-weight:500 !important;
     line-height:1 !important;
     white-space:nowrap !important;
-    border-radius:6px !important;
-    box-shadow:0 1px 2px rgba(0,0,0,.06) !important;
+    border-radius:5px !important;
+    box-shadow:0 1px 2px rgba(0,0,0,.05) !important;
   }
 
-  /* No extra blank strip under the name; messages start immediately below the compact card. */
+  /* Keep message content completely below the compact group-card/action row. */
   main > div > div.grid:has(> aside button.bg-blue-50) > section > div.flex-1 {
     min-height:0 !important;
     flex:1 1 auto !important;
