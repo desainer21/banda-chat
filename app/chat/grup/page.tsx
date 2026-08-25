@@ -94,11 +94,10 @@ export default function GroupsPage() {
       .on("presence", { event: "leave" }, updatePresence)
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
-          const { error: trackError } = await presenceChannel.track({
+          await presenceChannel.track({
             user_id: userId,
             group_id: selectedGroup.id,
           });
-          if (trackError) console.error("Group presence track error:", trackError);
           updatePresence();
         }
       });
