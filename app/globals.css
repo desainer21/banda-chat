@@ -25,17 +25,134 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* Perbaikan responsive header halaman Grup Banda Chat.
-   Desktop tetap seperti semula; pada layar HP tombol dipindahkan
-   ke baris berikutnya agar jumlah anggota dan status admin tidak terjepit. */
+/* Desktop tetap tidak disentuh. Semua penyesuaian di bawah hanya untuk HP. */
 @media (max-width: 640px) {
-  main section[class*="min-h-[70vh]"] > div:first-child {
-    flex-wrap: wrap;
+  /* Header halaman Grup Banda Chat dibuat sangat ringkas. */
+  main > div > header {
+    padding: 6px 8px !important;
+    min-height: 0 !important;
   }
 
+  main > div > header h1,
+  main > div > header .text-lg {
+    font-size: 13px !important;
+    line-height: 1.1 !important;
+    margin: 0 !important;
+  }
+
+  main > div > header p,
+  main > div > header .text-sm {
+    font-size: 9px !important;
+    line-height: 1.1 !important;
+    margin: 1px 0 0 !important;
+  }
+
+  main > div > header a,
+  main > div > header button {
+    padding: 4px 6px !important;
+    font-size: 9px !important;
+    line-height: 1.1 !important;
+  }
+
+  /* Kurangi jarak antara header halaman dan area grup. */
+  main > div > div.grid {
+    margin-top: 5px !important;
+    gap: 5px !important;
+  }
+
+  /* Daftar grup tetap ada, tetapi dibuat pendek agar chat lebih luas. */
+  main > div > div.grid > aside {
+    max-height: 18vh !important;
+  }
+
+  main > div > div.grid > aside > div:first-child {
+    padding: 5px 8px !important;
+  }
+
+  main > div > div.grid > aside > div:last-child {
+    max-height: 12vh !important;
+    overflow-y: auto !important;
+  }
+
+  main > div > div.grid > aside button {
+    padding: 5px 8px !important;
+  }
+
+  /* Header grup: foto + nama tetap satu baris dan tidak memakan tinggi. */
+  main section[class*="min-h-[70vh]"] > div:first-child {
+    padding: 5px 7px !important;
+    gap: 4px !important;
+    flex-wrap: nowrap !important;
+    min-height: 0 !important;
+  }
+
+  main section[class*="min-h-[70vh]"] > div:first-child > div:first-child {
+    min-width: 0 !important;
+  }
+
+  main section[class*="min-h-[70vh]"] > div:first-child img,
+  main section[class*="min-h-[70vh]"] > div:first-child .h-12 {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  main section[class*="min-h-[70vh]"] > div:first-child h2 {
+    font-size: 13px !important;
+    line-height: 1.1 !important;
+    margin: 0 !important;
+  }
+
+  /* Menu aksi dibuat kecil dan tetap satu baris bila muat. */
   main section[class*="min-h-[70vh]"] > div:first-child > div:last-child {
-    width: 100%;
-    justify-content: flex-start;
-    flex-wrap: wrap;
+    width: auto !important;
+    justify-content: flex-end !important;
+    flex-wrap: nowrap !important;
+    gap: 2px !important;
+  }
+
+  main section[class*="min-h-[70vh]"] > div:first-child button {
+    padding: 3px 4px !important;
+    font-size: 9px !important;
+    line-height: 1.1 !important;
+  }
+
+  /* Status online dibuat satu baris ringkas. */
+  main section[class*="min-h-[70vh]"] > div:first-child > div:last-child > div {
+    padding: 3px 5px !important;
+    margin-top: 0 !important;
+  }
+
+  main section[class*="min-h-[70vh]"] > div:first-child .text-sm {
+    font-size: 9px !important;
+    line-height: 1.1 !important;
+  }
+
+  main section[class*="min-h-[70vh]"] > div:first-child .text-xs {
+    font-size: 8px !important;
+    line-height: 1.1 !important;
+  }
+
+  /* Area pesan mendapat ruang vertikal sebesar mungkin. */
+  main section[class*="min-h-[70vh]"] {
+    min-height: 0 !important;
+    height: calc(100dvh - 170px) !important;
+  }
+
+  main section[class*="min-h-[70vh]"] > div.flex-1 {
+    min-height: 0 !important;
+    flex: 1 1 auto !important;
+    overflow-y: auto !important;
+    padding: 7px !important;
+  }
+
+  /* Kolom input tetap di bawah. */
+  main section[class*="min-h-[70vh]"] > div.p-3 {
+    flex: 0 0 auto !important;
+    padding: 5px !important;
+    margin-top: auto !important;
+    position: sticky !important;
+    bottom: 0 !important;
+    background: white !important;
+    z-index: 5 !important;
   }
 }
