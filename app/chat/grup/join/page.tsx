@@ -22,12 +22,13 @@ function JoinGroupContent() {
   const [error, setError] = useState("");
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
+  const inviteCode = params.get("code")?.trim() || "";
+
   useEffect(() => {
     let cancelled = false;
 
-    (async () => {
-      const code = params.get("code")?.trim();
-      if (!code) {
+    async function loadInvite() {
+      if (!inviteCode) {
         if (!cancelled) {
           setError("Link undangan grup tidak lengkap.");
           setLoading(false);
@@ -37,7 +38,7 @@ function JoinGroupContent() {
 
       const { data, error: previewError } = await supabase.rpc(
         "get_banda_group_invite_preview",
-        { p_invite_code: code }
+        { p_invite_code: inviteCode }
       );
 
       if (cancelled) return;
@@ -49,6 +50,7 @@ function JoinGroupContent() {
       }
 
       const preview = Array.isArray(data) ? data[0] : data;
+
       if (!preview?.id) {
         setError("Link undangan grup tidak valid atau sudah tidak tersedia.");
         setLoading(false);
@@ -57,17 +59,83 @@ function JoinGroupContent() {
 
       setGroup(preview as GroupPreview);
       setLoading(false);
-    })();
+    }
+
+    void loadInvite();
 
     return () => {
       cancelled = true;
     };
-  }, [params]);
+  }, [inviteCode]);
+
+  async function joinGroup() {
+    if (!inviteCode || joining) return false;
+
+    setJoining(true);
+    setError("");
+
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.getSession();
+
+    if (sessionError || !sessionData.session?.user) {
+      setJoining(false);
+      return false;
+    }
+
+    const { data, error: rpcError } = await supabase.rpc(
+      "join_banda_group_by_invite",
+      { p_invite_code: inviteCode }
+    );
+
+    if (rpcError) {
+      console.error("Join group error:", rpcError);
+      setError(rpcError.message);
+      setJoining(false);
+      return false;
+    }
+
+    if (!data || typeof data !== "object" || !("id" in data)) {
+      setError("Data grup tidak valid.");
+      setJoining(false);
+      return false;
+    }
+
+    const joinedGroup = data as { id: string };
+
+    // Setelah berhasil menjadi anggota, langsung buka grup.
+    // Halaman grup tetap menyediakan navigasi kembali ke chat utama.
+    router.replace(`/chat/grup?group=${encodeURIComponent(joinedGroup.id)}`);
+    return true;
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function autoJoinAfterAuth() {
+      if (!inviteCode || !group) return;
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (cancelled || !session?.user) return;
+
+      // Jika pengguna baru saja kembali dari /daftar atau /login,
+      // jangan meminta tombol Bergabung lagi. Langsung masukkan ke grup.
+      await joinGroup();
+    }
+
+    void autoJoinAfterAuth();
+
+    return () => {
+      cancelled = true;
+    };
+    // joinGroup sengaja tidak dimasukkan ke dependency karena fungsi dibuat
+    // ulang setiap render dan dapat memicu auto-join berulang.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inviteCode, group]);
 
   async function handleJoin() {
-    const code = params.get("code")?.trim();
-    if (!code || joining) return;
-
     const { data: session } = await supabase.auth.getSession();
 
     if (!session.session?.user) {
@@ -75,43 +143,22 @@ function JoinGroupContent() {
       return;
     }
 
-    setJoining(true);
-    setError("");
-
-    const { data, error: rpcError } = await supabase.rpc(
-      "join_banda_group_by_invite",
-      { p_invite_code: code }
-    );
-
-    if (rpcError) {
-      setError(rpcError.message);
-      setJoining(false);
-      return;
-    }
-
-    if (!data || typeof data !== "object" || !("id" in data)) {
-      setError("Data grup tidak valid.");
-      setJoining(false);
-      return;
-    }
-
-    const joinedGroup = data as { id: string };
-    router.replace(`/chat/grup?group=${joinedGroup.id}`);
+    await joinGroup();
   }
 
   function goToRegister() {
-    const code = params.get("code")?.trim();
-    const redirect = code
-      ? `/chat/grup/join?code=${encodeURIComponent(code)}`
+    const redirect = inviteCode
+      ? `/chat/grup/join?code=${encodeURIComponent(inviteCode)}`
       : "/chat/grup";
+
     router.push(`/daftar?redirect=${encodeURIComponent(redirect)}`);
   }
 
   function goToLogin() {
-    const code = params.get("code")?.trim();
-    const redirect = code
-      ? `/chat/grup/join?code=${encodeURIComponent(code)}`
+    const redirect = inviteCode
+      ? `/chat/grup/join?code=${encodeURIComponent(inviteCode)}`
       : "/chat/grup";
+
     router.push(`/login?redirect=${encodeURIComponent(redirect)}`);
   }
 
@@ -141,10 +188,10 @@ function JoinGroupContent() {
               {error}
             </div>
             <Link
-              href="/"
+              href="/chat"
               className="inline-block mt-5 px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold"
             >
-              Kembali ke Banda Chat
+              Kembali ke Chat
             </Link>
           </>
         ) : group ? (
@@ -182,6 +229,13 @@ function JoinGroupContent() {
             <p className="mt-3 text-xs text-slate-400">
               Bergabung ke grup memerlukan akun Banda Chat.
             </p>
+
+            <Link
+              href="/chat"
+              className="inline-block mt-5 text-sm font-semibold text-blue-600 hover:underline"
+            >
+              Kembali ke Chat
+            </Link>
           </>
         ) : null}
       </div>
