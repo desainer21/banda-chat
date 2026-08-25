@@ -1,12 +1,12 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import BandaLogo from "@/components/BandaLogo";
 import { supabase } from "@/lib/supabase";
 
-export default function DaftarPage() {
+function DaftarContent() {
   const router = useRouter();
   const params = useSearchParams();
   const redirect = (() => {
@@ -72,16 +72,11 @@ export default function DaftarPage() {
 
       if (profileError) console.error("Create profile error:", profileError);
 
-      // Jika konfirmasi email Supabase NONAKTIF, signUp langsung memberi session.
-      // Pertahankan redirect agar pengguna yang datang dari undangan grup
-      // kembali ke halaman grup setelah berhasil daftar.
       if (data.session?.user) {
         window.location.href = redirect;
         return;
       }
 
-      // Fallback untuk konfigurasi Supabase yang tidak langsung memberi session.
-      // Login otomatis tetap dicoba terlebih dahulu.
       const { data: autoLoginData, error: autoLoginError } =
         await supabase.auth.signInWithPassword({
           email: cleanEmail,
@@ -93,13 +88,8 @@ export default function DaftarPage() {
         return;
       }
 
-      // Jangan lagi menampilkan pesan "login otomatis gagal" yang membingungkan.
-      // Jika email confirmation aktif, akun memang belum dapat login sebelum
-      // email dikonfirmasi. Arahkan pengguna ke login sambil mempertahankan link grup.
       if (autoLoginError) {
-        setSuccessMessage(
-          "Akun berhasil dibuat. Silakan login setelah akun Anda siap digunakan."
-        );
+        setSuccessMessage("Akun berhasil dibuat. Silakan login setelah akun Anda siap digunakan.");
         window.setTimeout(() => {
           router.push(`/login?redirect=${encodeURIComponent(redirect)}`);
         }, 900);
@@ -168,5 +158,22 @@ export default function DaftarPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function DaftarPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
+          <div className="text-center">
+            <BandaLogo size={72} />
+            <p className="mt-4 text-sm text-slate-500">Memuat halaman daftar...</p>
+          </div>
+        </main>
+      }
+    >
+      <DaftarContent />
+    </Suspense>
   );
 }
