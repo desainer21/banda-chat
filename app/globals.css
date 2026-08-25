@@ -7,166 +7,81 @@ body { background: var(--background); color: var(--foreground); font-family: Ari
 
 /* Desktop layout and group logic are untouched. */
 @media (max-width: 640px) {
-  /* Compact top page header: title/description stay together on the left,
-     navigation/actions stay together on the right. */
-  main > div > header {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) auto !important;
-    align-items: center !important;
-    gap: 6px !important;
-    padding: 6px 8px !important;
-    min-height: 0 !important;
-  }
-  main > div > header > div:first-child {
-    min-width: 0 !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 7px !important;
-  }
-  main > div > header > div:first-child > div:last-child {
-    min-width: 0 !important;
-  }
-  main > div > header h1,
-  main > div > header .text-lg {
-    font-size: 12px !important;
-    line-height: 1.05 !important;
-    margin: 0 !important;
-    white-space: nowrap !important;
-  }
-  main > div > header p,
-  main > div > header .text-xs {
-    font-size: 8px !important;
-    line-height: 1.05 !important;
-    margin: 1px 0 0 !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-  }
-  main > div > header > div:last-child {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: flex-end !important;
-    gap: 3px !important;
-    white-space: nowrap !important;
-  }
-  main > div > header a,
-  main > div > header button {
-    padding: 4px 5px !important;
-    font-size: 8px !important;
-    line-height: 1 !important;
-    white-space: nowrap !important;
-  }
+  main > div > header { display:grid !important; grid-template-columns:minmax(0,1fr) auto !important; align-items:center !important; gap:6px !important; padding:6px 8px !important; min-height:0 !important; }
+  main > div > header > div:first-child { min-width:0 !important; display:flex !important; align-items:center !important; gap:7px !important; }
+  main > div > header > div:first-child > div:last-child { min-width:0 !important; }
+  main > div > header h1, main > div > header .text-lg { font-size:12px !important; line-height:1.05 !important; margin:0 !important; white-space:nowrap !important; }
+  main > div > header p, main > div > header .text-xs { font-size:8px !important; line-height:1.05 !important; margin:1px 0 0 !important; white-space:nowrap !important; overflow:hidden !important; text-overflow:ellipsis !important; }
+  main > div > header > div:last-child { display:flex !important; align-items:center !important; justify-content:flex-end !important; gap:3px !important; white-space:nowrap !important; }
+  main > div > header a, main > div > header button { padding:4px 5px !important; font-size:8px !important; line-height:1 !important; white-space:nowrap !important; }
+  main > div > div.grid { margin-top:4px !important; gap:4px !important; }
 
-  main > div > div.grid {
-    margin-top: 4px !important;
-    gap: 4px !important;
-  }
+  /* Keep the group list and its existing "Anggota dapat posting" text unchanged. */
+  main > div > div.grid > aside { max-height:18vh !important; overflow:hidden !important; }
+  main > div > div.grid > aside > div:first-child { padding:5px 8px !important; }
+  main > div > div.grid > aside > div:first-child .font-bold { font-size:12px !important; line-height:1.05 !important; }
+  main > div > div.grid > aside > div:first-child .text-xs { font-size:8px !important; line-height:1.05 !important; margin-top:1px !important; }
+  main > div > div.grid > aside > div:last-child { max-height:13vh !important; overflow-y:auto !important; }
+  main > div > div.grid > aside button { padding:5px 8px !important; }
+  main > div > div.grid > aside button .h-10 { width:30px !important; height:30px !important; }
+  main > div > div.grid > aside button .font-semibold { font-size:11px !important; line-height:1.05 !important; }
+  main > div > div.grid > aside button .text-xs.text-slate-500.mt-1 { display:block !important; font-size:8px !important; line-height:1.05 !important; margin-top:1px !important; }
 
-  /* Group list remains intact, including "Anggota dapat posting". */
-  main > div > div.grid > aside {
-    max-height: 18vh !important;
-    overflow: hidden !important;
-  }
-  main > div > div.grid > aside > div:first-child {
-    padding: 5px 8px !important;
-  }
-  main > div > div.grid > aside > div:first-child .font-bold {
-    font-size: 12px !important;
-    line-height: 1.05 !important;
-  }
-  main > div > div.grid > aside > div:first-child .text-xs {
-    font-size: 8px !important;
-    line-height: 1.05 !important;
-    margin-top: 1px !important;
-  }
-  main > div > div.grid > aside > div:last-child {
-    max-height: 13vh !important;
-    overflow-y: auto !important;
-  }
-  main > div > div.grid > aside button {
-    padding: 5px 8px !important;
-  }
-  main > div > div.grid > aside button .h-10 {
-    width: 30px !important;
-    height: 30px !important;
-  }
-  main > div > div.grid > aside button .font-semibold {
-    font-size: 11px !important;
-    line-height: 1.05 !important;
-  }
-  main > div > div.grid > aside button .text-xs.text-slate-500.mt-1 {
-    display: block !important;
-    font-size: 8px !important;
-    line-height: 1.05 !important;
-    margin-top: 1px !important;
-  }
+  /* Selected chat keeps the large message area. */
+  main > div > div.grid:has(> aside button.bg-blue-50) > section { min-height:0 !important; height:calc(100dvh - 150px) !important; max-height:calc(100dvh - 150px) !important; }
+  main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child { position:relative !important; height:0 !important; min-height:0 !important; padding:0 !important; margin:0 !important; border:0 !important; overflow:visible !important; z-index:20 !important; }
 
-  /* Selected chat: remove only the duplicate photo/name header. The actual
-     group card above remains the single visible group identity. */
-  main > div > div.grid:has(> aside button.bg-blue-50) > section {
-    min-height: 0 !important;
-    height: calc(100dvh - 150px) !important;
-    max-height: calc(100dvh - 150px) !important;
-  }
+  /* Hide duplicate selected-group identity and member summary. */
+  main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child > div:first-child > div:first-child { display:none !important; }
+  main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child > div:first-child > div:first-child > div:nth-child(2) { display:none !important; }
 
-  main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child {
-    position: relative !important;
-    height: 0 !important;
-    min-height: 0 !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    border: 0 !important;
-    overflow: visible !important;
-    z-index: 20 !important;
-  }
-
-  /* Hide the duplicate selected-group photo + name + member summary. */
-  main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child > div:first-child > div:first-child {
-    display: none !important;
-  }
-
-  /* Keep only the functional Invite/Members controls, compact and out of the
-     message area. */
+  /* Compact Invite/Members controls: small pill buttons, separated from messages. */
   main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child > div:first-child > div:last-child {
-    position: absolute !important;
-    top: 2px !important;
-    right: 5px !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 3px !important;
-    flex-wrap: nowrap !important;
-    width: auto !important;
-    margin: 0 !important;
+    position:absolute !important;
+    top:3px !important;
+    right:5px !important;
+    display:flex !important;
+    align-items:center !important;
+    gap:4px !important;
+    flex-wrap:nowrap !important;
+    width:auto !important;
+    margin:0 !important;
+    padding:0 !important;
+    background:transparent !important;
   }
   main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child > div:first-child > div:last-child button {
-    padding: 3px 5px !important;
-    font-size: 8px !important;
-    line-height: 1 !important;
-    white-space: nowrap !important;
-    border-radius: 7px !important;
+    display:inline-flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+    width:auto !important;
+    min-width:0 !important;
+    height:24px !important;
+    padding:3px 7px !important;
+    margin:0 !important;
+    font-size:8px !important;
+    line-height:1 !important;
+    white-space:nowrap !important;
+    border-radius:999px !important;
+    box-shadow:0 1px 3px rgba(0,0,0,.08) !important;
   }
 
-  /* Do not render the duplicate online/admin summary in the chat header. */
-  main > div > div.grid:has(> aside button.bg-blue-50) > section > div:first-child > div:first-child > div:first-child > div:nth-child(2) {
-    display: none !important;
-  }
-
-  /* Messages get the rest of the screen. */
+  /* Give the action strip its own tiny separation so it cannot visually merge with messages. */
   main > div > div.grid:has(> aside button.bg-blue-50) > section > div.flex-1 {
-    min-height: 0 !important;
-    flex: 1 1 auto !important;
-    overflow-y: auto !important;
-    padding: 6px !important;
+    min-height:0 !important;
+    flex:1 1 auto !important;
+    overflow-y:auto !important;
+    padding:6px !important;
+    margin-top:28px !important;
+    border-top:1px solid #f1f5f9 !important;
   }
 
-  /* Composer remains the footer. */
   main > div > div.grid:has(> aside button.bg-blue-50) > section > div.p-3 {
-    flex: 0 0 auto !important;
-    margin-top: auto !important;
-    padding: 5px !important;
-    position: sticky !important;
-    bottom: 0 !important;
-    background: white !important;
-    z-index: 10 !important;
+    flex:0 0 auto !important;
+    margin-top:auto !important;
+    padding:5px !important;
+    position:sticky !important;
+    bottom:0 !important;
+    background:white !important;
+    z-index:10 !important;
   }
 }
