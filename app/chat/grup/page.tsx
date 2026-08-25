@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import BandaLogo from "@/components/BandaLogo";
@@ -20,6 +20,7 @@ export default function GroupsPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [groupUnread, setGroupUnread] = useState<Record<string, number>>({});
   const [groupOnlineUserIds, setGroupOnlineUserIds] = useState<string[]>([]);
+  const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
   const [text, setText] = useState("");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -39,10 +40,13 @@ export default function GroupsPage() {
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [editAvatarFile, setEditAvatarFile] = useState<File | null>(null);
   const [editAvatarPreview, setEditAvatarPreview] = useState<string | null>(null);
+  const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isAdmin = !!selectedGroup && selectedGroup.created_by === userId;
   const availableContacts = useMemo(() => contacts.filter((c) => !members.some((m) => m.id === c.id)), [contacts, members]);
   const onlineMembers = useMemo(() => members.filter((m) => groupOnlineUserIds.includes(m.id)), [members, groupOnlineUserIds]);
+  const typingMembers = useMemo(() => members.filter((m) => typingUserIds.includes(m.id)), [members, typingUserIds]);
 
   useEffect(() => {
     let mounted = true;
@@ -82,9 +86,7 @@ export default function GroupsPage() {
     const updatePresence = () => {
       if (!mounted) return;
       const state = presenceChannel.presenceState<{ user_id: string }>();
-      const ids = Object.values(state).flatMap((entries) =>
-        entries.map((entry) => entry.user_id).filter(Boolean)
-      );
+      const ids = Object.values(state).flatMap((entries) => entries.map((entry) => entry.user_id).filter(Boolean));
       setGroupOnlineUserIds([...new Set(ids)]);
     };
 
@@ -94,10 +96,7 @@ export default function GroupsPage() {
       .on("presence", { event: "leave" }, updatePresence)
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
-          await presenceChannel.track({
-            user_id: userId,
-            group_id: selectedGroup.id,
-          });
+          await presenceChannel.track({ user_id: userId, group_id: selectedGroup.id });
           updatePresence();
         }
       });
@@ -107,6 +106,36 @@ export default function GroupsPage() {
       setGroupOnlineUserIds([]);
       void presenceChannel.untrack();
       void supabase.removeChannel(presenceChannel);
+    };
+  }, [selectedGroup?.id, userId]);
+
+  useEffect(() => {
+    if (!selectedGroup || !userId) {
+      setTypingUserIds([]);
+      return;
+    }
+
+    const channel = supabase.channel(`group-typing-${selectedGroup.id}`);
+    typingChannelRef.current = channel;
+
+    channel
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        const senderId = typeof payload?.user_id === "string" ? payload.user_id : "";
+        if (!senderId || senderId === userId) return;
+        setTypingUserIds((prev) => {
+          if (payload?.is_typing === true) return prev.includes(senderId) ? prev : [...prev, senderId];
+          return prev.filter((id) => id !== senderId);
+        });
+      })
+      .subscribe();
+
+    return () => {
+      if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = null;
+      setTypingUserIds([]);
+      if (typingChannelRef.current === channel) typingChannelRef.current = null;
+      void channel.send({ type: "broadcast", event: "typing", payload: { user_id: userId, is_typing: false } });
+      void supabase.removeChannel(channel);
     };
   }, [selectedGroup?.id, userId]);
 
@@ -121,9 +150,7 @@ export default function GroupsPage() {
         const message = payload.new as Message;
         setMessages((prev) => prev.some((m) => m.id === message.id) ? prev : [...prev, message]);
         if (message.sender_id !== userId) {
-          if (message.conversation_id === selectedGroup.id) {
-            await markGroupRead(selectedGroup.id);
-          }
+          if (message.conversation_id === selectedGroup.id) await markGroupRead(selectedGroup.id);
           void loadUnreadCounts();
         }
       })
@@ -275,8 +302,28 @@ export default function GroupsPage() {
     }
   }
 
+  async function broadcastTyping(isTyping: boolean) {
+    const channel = typingChannelRef.current;
+    if (!channel || !userId) return;
+    await channel.send({ type: "broadcast", event: "typing", payload: { user_id: userId, is_typing: isTyping } });
+  }
+
+  function handleTextChange(value: string) {
+    setText(value);
+    if (!selectedGroup || !userId || (selectedGroup.members_can_post === false && !isAdmin)) return;
+    if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+    void broadcastTyping(value.trim().length > 0);
+    if (value.trim().length > 0) {
+      typingStopTimerRef.current = setTimeout(() => {
+        void broadcastTyping(false);
+      }, 1500);
+    }
+  }
+
   async function sendMessage() {
     if (!selectedGroup || !text.trim() || sending) return;
+    if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+    void broadcastTyping(false);
     setSending(true); setError("");
     const { data, error: rpcError } = await supabase.rpc("send_banda_group_message", { p_conversation_id: selectedGroup.id, p_content: text.trim() });
     if (rpcError) setError(rpcError.message); else if (data) {
@@ -328,7 +375,8 @@ export default function GroupsPage() {
             {!selectedGroup ? <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-500"><div className="text-5xl mb-3">👥</div><h2 className="font-bold text-lg text-slate-700">Pilih grup</h2><p className="text-sm mt-1">Atau buat grup baru untuk mulai mengobrol bersama beberapa teman.</p></div> : <>
               <div className="p-4 border-b flex items-center justify-between gap-3"><div className="flex items-center gap-3 min-w-0"><div className="h-12 w-12 shrink-0 overflow-hidden rounded-full bg-green-100 flex items-center justify-center">{selectedGroup.group_avatar_url ? <img src={selectedGroup.group_avatar_url} alt={selectedGroup.name || "Grup"} className="h-full w-full object-cover" /> : <span className="text-xl">👥</span>}</div><div className="min-w-0"><h2 className="font-bold truncate">{selectedGroup.name}</h2><p className="text-xs text-slate-500">{members.length} anggota{onlineMembers.length ? ` • ${onlineMembers.length} online` : ""}{isAdmin ? " • Anda admin" : ""}</p></div></div><div className="flex gap-2"><button onClick={() => setShowInvite(true)} className="px-3 py-2 rounded-xl border text-sm">🔗 Undang</button>{isAdmin && <button onClick={openEditGroup} className="px-3 py-2 rounded-xl border text-sm">✏️ Edit Grup</button>}<button onClick={() => setShowMembers(true)} className="px-3 py-2 rounded-xl border text-sm">👤 Anggota</button></div></div>
               <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50 min-h-[48vh]">{!messages.length && <div className="text-center text-sm text-slate-500 py-10">Belum ada postingan di grup ini.</div>}{messages.map((m) => { const sender = members.find((x) => x.id === m.sender_id); return <div key={m.id} className={`flex ${m.sender_id === userId ? "justify-end" : "justify-start"}`}><div className={`max-w-[85%] rounded-2xl px-4 py-2 ${m.sender_id === userId ? "bg-blue-600 text-white" : "bg-white border"}`}><div className={`text-[11px] mb-1 ${m.sender_id === userId ? "text-blue-100" : "text-slate-500"}`}>{m.sender_id === userId ? "Anda" : displayName(sender || { id: m.sender_id, full_name: "Pengguna", username: null, avatar_url: null })}</div><div className="whitespace-pre-wrap break-words text-sm">{m.content}</div><div className={`text-[10px] text-right mt-1 ${m.sender_id === userId ? "text-blue-100" : "text-slate-400"}`}>{formatTime(m.created_at)}{m.updated_at && m.updated_at !== m.created_at ? " • diedit" : ""}</div></div></div>})}</div>
-              <div className="p-3 border-t">{selectedGroup.members_can_post === false && !isAdmin && <div className="text-xs text-amber-700 bg-amber-50 rounded-xl p-2 mb-2">Admin sedang membatasi postingan. Hanya admin yang dapat mengirim.</div>}<div className="flex gap-2"><textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendMessage(); } }} disabled={selectedGroup.members_can_post === false && !isAdmin} placeholder="Tulis pesan/postingan..." className="flex-1 min-h-11 max-h-32 resize-none rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200" /><button onClick={() => void sendMessage()} disabled={!text.trim() || sending || (selectedGroup.members_can_post === false && !isAdmin)} className="px-4 rounded-xl bg-blue-600 text-white font-semibold disabled:opacity-50">Kirim</button></div></div>
+              {typingMembers.length > 0 && <div className="px-4 py-1.5 bg-slate-50 border-t border-slate-100 min-h-8"><div className="flex items-center gap-2 text-xs text-slate-500"><span className="inline-flex gap-0.5 items-end h-4"><span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:-0.3s]" /><span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:-0.15s]" /><span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce" /></span><span>{typingMembers.length === 1 ? `${displayName(typingMembers[0])} sedang menulis...` : typingMembers.length === 2 ? `${displayName(typingMembers[0])} dan ${displayName(typingMembers[1])} sedang menulis...` : `${displayName(typingMembers[0])}, ${displayName(typingMembers[1])} dan ${typingMembers.length - 2} lainnya sedang menulis...`}</span></div></div>}
+              <div className="p-3 border-t">{selectedGroup.members_can_post === false && !isAdmin && <div className="text-xs text-amber-700 bg-amber-50 rounded-xl p-2 mb-2">Admin sedang membatasi postingan. Hanya admin yang dapat mengirim.</div>}<div className="flex gap-2"><textarea value={text} onChange={(e) => handleTextChange(e.target.value)} onBlur={() => void broadcastTyping(false)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendMessage(); } }} disabled={selectedGroup.members_can_post === false && !isAdmin} placeholder="Tulis pesan/postingan..." className="flex-1 min-h-11 max-h-32 resize-none rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200" /><button onClick={() => void sendMessage()} disabled={!text.trim() || sending || (selectedGroup.members_can_post === false && !isAdmin)} className="px-4 rounded-xl bg-blue-600 text-white font-semibold disabled:opacity-50">Kirim</button></div></div>
             </>}
           </section>
         </div>
