@@ -20,8 +20,8 @@ export default function ChatNotificationBridge() {
     if (!senderId) return;
 
     let cancelled = false;
-    let timer: ReturnType<typeof setInterval> | null = null;
-    let timeout: ReturnType<typeof setTimeout> | null = null;
+    let timer: number | null = null;
+    let timeout: number | null = null;
 
     const openSender = async () => {
       const { data: profile, error } = await supabase
@@ -42,7 +42,7 @@ export default function ChatNotificationBridge() {
 
         const sidebar = document.querySelector("aside");
         if (!sidebar) {
-          if (attempts >= 100 && timer) window.clearInterval(timer);
+          if (attempts >= 100 && timer !== null) window.clearInterval(timer);
           return;
         }
 
@@ -58,16 +58,16 @@ export default function ChatNotificationBridge() {
         });
 
         if (target) {
-          if (timer) window.clearInterval(timer);
+          if (timer !== null) window.clearInterval(timer);
           window.history.replaceState({}, "", "/chat");
           (target as HTMLButtonElement).click();
-        } else if (attempts >= 100 && timer) {
+        } else if (attempts >= 100 && timer !== null) {
           window.clearInterval(timer);
         }
       }, 100);
 
       timeout = window.setTimeout(() => {
-        if (timer) window.clearInterval(timer);
+        if (timer !== null) window.clearInterval(timer);
       }, 10000);
     };
 
@@ -75,8 +75,8 @@ export default function ChatNotificationBridge() {
 
     return () => {
       cancelled = true;
-      if (timer) window.clearInterval(timer);
-      if (timeout) window.clearTimeout(timeout);
+      if (timer !== null) window.clearInterval(timer);
+      if (timeout !== null) window.clearTimeout(timeout);
     };
   }, [pathname, searchParams]);
 
