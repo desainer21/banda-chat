@@ -29,13 +29,27 @@ if (startIndex >= 0 && !next.slice(startIndex, startIndex + 1200).includes("Mena
   if (after.includes(sessionCheckTarget)) next = before + after.replace(sessionCheckTarget, sessionCheckReplacement, 1);
 }
 
-// 4. Show the complete Grup label on phones as well as desktop.
+// 4. Make private-chat notification navigation use the real startChat() flow.
+// The notification bridge dispatches the exact sender/conversation. This
+// listener waits for the existing user list, finds that sender, and calls the
+// same startChat() function used by the normal contact button. No chat UI or
+// messaging logic is rewritten.
+const notificationListenerMarker = "// banda-notification-open-chat-v1";
+if (!next.includes(notificationListenerMarker)) {
+  const notificationListener = `\n  /* ============================================================\n     NOTIFICATION -> OPEN PRIVATE CHAT\n     ============================================================ */\n\n  // ${notificationListenerMarker}\n  useEffect(() => {\n    if (!currentUserId || users.length === 0) {\n      return;\n    }\n\n    const handleNotificationOpen = (event: Event) => {\n      const customEvent = event as CustomEvent<{\n        conversationId?: string;\n        senderId?: string | null;\n      }>;\n\n      const senderId = customEvent.detail?.senderId;\n      const conversationId = customEvent.detail?.conversationId;\n\n      if (!senderId && !conversationId) {\n        return;\n      }\n\n      const targetUser = senderId\n        ? users.find((user) => user.id === senderId)\n        : null;\n\n      if (!targetUser) {\n        return;\n      }\n\n      void startChat(targetUser);\n    };\n\n    window.addEventListener(\n      "banda-open-conversation",\n      handleNotificationOpen\n    );\n\n    return () => {\n      window.removeEventListener(\n        "banda-open-conversation",\n        handleNotificationOpen\n      );\n    };\n  }, [currentUserId, users]);\n`;
+  const startChatMarker = "  /* ============================================================\n     START CHAT\n     ============================================================ */";
+  if (next.includes(startChatMarker)) {
+    next = next.replace(startChatMarker, notificationListener + "\n" + startChatMarker);
+  }
+}
+
+// 5. Show the complete Grup label on phones as well as desktop.
 next = next.replace(
   `              <span className="hidden sm:inline">Grup</span>`,
   `              <span>Grup</span>`
 );
 
-// 5. Group message edit/delete and a stable chat viewport are applied by the
+// 6. Group message edit/delete and a stable chat viewport are applied by the
 // prebuild patch so the already-working group page remains otherwise untouched.
 const groupFilePath = path.join(process.cwd(), "app", "chat", "grup", "page.tsx");
 if (fs.existsSync(groupFilePath)) {
