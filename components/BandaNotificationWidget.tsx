@@ -52,7 +52,7 @@ export default function BandaNotificationWidget({ mode = "all" }: { mode?: "chat
         const senderMap = new Map<string, Profile>((senders || []).map((p) => [p.id, p as Profile]));
         for (const m of directMessages || []) {
           const p = senderMap.get(m.sender_id); const name = p?.full_name?.trim() || p?.username || "Pengguna baru";
-          result.push({ id: m.id, source: "chat", sourceId: m.conversation_id, senderId: m.sender_id, title: name, preview: m.content?.trim() || "Mengirim pesan baru", createdAt: m.created_at, href: `/chat?conversation=${encodeURIComponent(m.conversation_id)}&user=${encodeURIComponent(m.sender_id)}` });
+          result.push({ id: m.id, source: "chat", sourceId: m.conversation_id, senderId: m.sender_id, title: name, preview: m.content?.trim() || "Mengirim pesan baru", createdAt: m.created_at, href: `/chat/notifikasi/${encodeURIComponent(m.conversation_id)}?sender=${encodeURIComponent(m.sender_id)}` });
         }
       }
 
