@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node scripts/patch-contact-isolation.cjs && next dev",
     "build": "next build",
-    "prebuild": "node scripts/patch-contact-isolation.cjs",
+    "prebuild": "node scripts/patch-contact-isolation.cjs && node scripts/patch-notification-open-chat.cjs",
     "start": "next start",
     "lint": "eslint"
   },
