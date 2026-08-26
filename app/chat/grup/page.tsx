@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 
 type Profile = { id: string; full_name: string; username: string | null; avatar_url: string | null };
 type Group = { id: string; type: string; name: string | null; created_by: string | null; created_at: string; invite_code?: string | null; members_can_post?: boolean; group_description?: string | null; group_avatar_url?: string | null };
-type Message = { id: string; conversation_id: string; sender_id: string; content: string; created_at: string; updated_at?: string | null };
+type Message = { id: string; conversation_id: string; sender_id: string; content: string; image_url?: string | null; created_at: string; updated_at?: string | null };
 
 export default function GroupsPage() {
   const router = useRouter();
@@ -25,6 +25,7 @@ export default function GroupsPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
@@ -41,6 +42,7 @@ export default function GroupsPage() {
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [editAvatarFile, setEditAvatarFile] = useState<File | null>(null);
   const [editAvatarPreview, setEditAvatarPreview] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const remoteTypingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -165,7 +167,7 @@ export default function GroupsPage() {
     const { data: profiles } = await supabase.from("profiles").select("id,full_name,username,avatar_url").in("id", ids); setMembers((profiles || []) as Profile[]);
   }
   async function loadMessages(groupId: string) {
-    const { data, error: messageError } = await supabase.from("messages").select("id,conversation_id,sender_id,content,created_at,updated_at").eq("conversation_id", groupId).order("created_at", { ascending: true }).limit(200);
+    const { data, error: messageError } = await supabase.from("messages").select("id,conversation_id,sender_id,content,image_url,created_at,updated_at").eq("conversation_id", groupId).order("created_at", { ascending: true }).limit(200);
     if (messageError) { console.error("Load group messages error:", messageError); return; }
     setMessages((data || []) as Message[]);
   }
@@ -236,6 +238,37 @@ export default function GroupsPage() {
     if (rpcError) setError(rpcError.message); else if (data) { const message = data as Message; setMessages((prev) => prev.some((m) => m.id === message.id) ? prev : [...prev, message]); setText(""); void loadUnreadCounts(); }
     setSending(false);
   }
+  async function handleGroupImageUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !selectedGroup || imageUploading) return;
+    if (selectedGroup.members_can_post === false && !isAdmin) { setError("Admin sedang membatasi postingan. Hanya admin yang dapat mengirim."); return; }
+    if (!file.type.startsWith("image/")) { setError("File yang dipilih harus berupa gambar."); return; }
+    if (file.size > 5 * 1024 * 1024) { setError("Ukuran gambar maksimal 5 MB."); return; }
+    setImageUploading(true); setError("");
+    try {
+      const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const safeExtension = /^[a-z0-9]+$/.test(extension) ? extension : "jpg";
+      const path = `${selectedGroup.id}/${userId}-${Date.now()}.${safeExtension}`;
+      const { error: uploadError } = await supabase.storage.from("group-images").upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type });
+      if (uploadError) throw new Error("Upload gambar gagal: " + uploadError.message);
+      const { data: publicData } = supabase.storage.from("group-images").getPublicUrl(path);
+      const imageUrl = publicData.publicUrl;
+      if (!imageUrl) throw new Error("URL gambar tidak ditemukan.");
+      const { data: inserted, error: insertError } = await supabase.from("messages").insert({ conversation_id: selectedGroup.id, sender_id: userId, content: "", image_url: imageUrl }).select("id,conversation_id,sender_id,content,image_url,created_at,updated_at").single();
+      if (insertError) {
+        await supabase.storage.from("group-images").remove([path]);
+        throw new Error("Gagal menyimpan gambar ke pesan: " + insertError.message);
+      }
+      if (inserted) setMessages((prev) => prev.some((m) => m.id === inserted.id) ? prev : [...prev, inserted as Message]);
+      void loadUnreadCounts();
+    } catch (err) {
+      console.error("Group image upload error:", err);
+      setError(err instanceof Error ? err.message : "Gagal mengunggah gambar.");
+    } finally {
+      setImageUploading(false);
+    }
+  }
   async function copyInvite() {
     if (!selectedGroup?.invite_code) return;
     const link = `${window.location.origin}/chat/grup/join?code=${encodeURIComponent(selectedGroup.invite_code)}`; await navigator.clipboard.writeText(link); setInviteCopied(true); setTimeout(() => setInviteCopied(false), 1800);
@@ -274,9 +307,9 @@ export default function GroupsPage() {
                   </div>}
                 </div>
               </div>
-              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50 min-h-[48vh]">{!messages.length && <div className="text-center text-sm text-slate-500 py-10">Belum ada postingan di grup ini.</div>}{messages.map((m) => { const sender = members.find((x) => x.id === m.sender_id); return <div key={m.id} className={`flex ${m.sender_id === userId ? "justify-end" : "justify-start"}`}><div className={`max-w-[85%] rounded-2xl px-4 py-2 ${m.sender_id === userId ? "bg-blue-600 text-white" : "bg-white border"}`}><div className={`text-[11px] mb-1 ${m.sender_id === userId ? "text-blue-100" : "text-slate-500"}`}>{m.sender_id === userId ? "Anda" : displayName(sender || { id: m.sender_id, full_name: "Pengguna", username: null, avatar_url: null })}</div><div className="whitespace-pre-wrap break-words text-sm">{m.content}</div><div className={`text-[10px] text-right mt-1 ${m.sender_id === userId ? "text-blue-100" : "text-slate-400"}`}>{formatTime(m.created_at)}{m.updated_at && m.updated_at !== m.created_at ? " • diedit" : ""}</div></div></div>})}</div>
+              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50 min-h-[48vh]">{!messages.length && <div className="text-center text-sm text-slate-500 py-10">Belum ada postingan di grup ini.</div>}{messages.map((m) => { const sender = members.find((x) => x.id === m.sender_id); return <div key={m.id} className={`flex ${m.sender_id === userId ? "justify-end" : "justify-start"}`}><div className={`max-w-[85%] rounded-2xl px-4 py-2 ${m.sender_id === userId ? "bg-blue-600 text-white" : "bg-white border"}`}><div className={`text-[11px] mb-1 ${m.sender_id === userId ? "text-blue-100" : "text-slate-500"}`}>{m.sender_id === userId ? "Anda" : displayName(sender || { id: m.sender_id, full_name: "Pengguna", username: null, avatar_url: null })}</div>{m.content && <div className="whitespace-pre-wrap break-words text-sm">{m.content}</div>}{m.image_url && <div className="mt-2"><img src={m.image_url} className="rounded-xl max-h-72 max-w-full w-auto" alt="Gambar pesan" /><a href={m.image_url} download target="_blank" rel="noopener noreferrer" className="text-xs underline mt-2 inline-block">⬇️ Download Gambar</a></div>}<div className={`text-[10px] text-right mt-1 ${m.sender_id === userId ? "text-blue-100" : "text-slate-400"}`}>{formatTime(m.created_at)}{m.updated_at && m.updated_at !== m.created_at ? " • diedit" : ""}</div></div></div>})}</div>
               {typingMembers.length > 0 && <div className="px-4 py-1.5 bg-slate-50 border-t border-slate-100 min-h-8"><div className="flex items-center gap-2 text-xs text-slate-500"><span className="inline-flex gap-0.5 items-end h-4"><span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:-0.3s]" /><span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:-0.15s]" /><span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce" /></span><span>{typingMembers.length === 1 ? `${displayName(typingMembers[0])} sedang menulis...` : typingMembers.length === 2 ? `${displayName(typingMembers[0])} dan ${displayName(typingMembers[1])} sedang menulis...` : `${displayName(typingMembers[0])}, ${displayName(typingMembers[1])} dan ${typingMembers.length - 2} lainnya sedang menulis...`}</span></div></div>}
-              <div className="p-3 border-t">{selectedGroup.members_can_post === false && !isAdmin && <div className="text-xs text-amber-700 bg-amber-50 rounded-xl p-2 mb-2">Admin sedang membatasi postingan. Hanya admin yang dapat mengirim.</div>}<div className="flex gap-2"><textarea value={text} onChange={(e) => handleTextChange(e.target.value)} onBlur={() => void broadcastTyping(false)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendMessage(); } }} disabled={selectedGroup.members_can_post === false && !isAdmin} placeholder="Tulis pesan/postingan..." className="flex-1 min-h-11 max-h-32 resize-none rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200" /><button onClick={() => void sendMessage()} disabled={!text.trim() || sending || (selectedGroup.members_can_post === false && !isAdmin)} className="px-4 rounded-xl bg-blue-600 text-white font-semibold disabled:opacity-50">Kirim</button></div></div>
+              <div className="p-3 border-t">{selectedGroup.members_can_post === false && !isAdmin && <div className="text-xs text-amber-700 bg-amber-50 rounded-xl p-2 mb-2">Admin sedang membatasi postingan. Hanya admin yang dapat mengirim.</div>}<div className="flex gap-2"><input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleGroupImageUpload} /><button type="button" onClick={() => imageInputRef.current?.click()} disabled={imageUploading || (selectedGroup.members_can_post === false && !isAdmin)} className="h-11 w-11 shrink-0 rounded-xl border flex items-center justify-center disabled:opacity-50" aria-label="Upload gambar">{imageUploading ? "⏳" : "📷"}</button><textarea value={text} onChange={(e) => handleTextChange(e.target.value)} onBlur={() => void broadcastTyping(false)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendMessage(); } }} disabled={selectedGroup.members_can_post === false && !isAdmin} placeholder="Tulis pesan/postingan..." className="flex-1 min-h-11 max-h-32 resize-none rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200" /><button onClick={() => void sendMessage()} disabled={!text.trim() || sending || (selectedGroup.members_can_post === false && !isAdmin)} className="px-4 rounded-xl bg-blue-600 text-white font-semibold disabled:opacity-50">Kirim</button></div></div>
             </>}
           </section>
         </div>
