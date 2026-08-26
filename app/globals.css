@@ -5,28 +5,127 @@
 @media (prefers-color-scheme: dark) { :root { --background:#0a0a0a; --foreground:#ededed; } }
 body { background:var(--background); color:var(--foreground); font-family:Arial,Helvetica,sans-serif; }
 
-/* Desktop remains unchanged. Mobile-only layout adjustments are below. */
+/* Desktop remains unchanged. All rules below are mobile-only. */
 @media (max-width:640px) {
-  main > div > header { display:grid!important; grid-template-columns:minmax(0,1fr) auto!important; align-items:center!important; gap:6px!important; padding:6px 8px!important; min-height:0!important; }
-  main > div > header > div:first-child { min-width:0!important; display:flex!important; align-items:center!important; gap:7px!important; }
-  main > div > header h1,main > div > header .text-lg { font-size:12px!important; line-height:1.05!important; margin:0!important; white-space:nowrap!important; }
-  main > div > header p,main > div > header .text-xs { font-size:8px!important; line-height:1.05!important; margin:1px 0 0!important; white-space:nowrap!important; overflow:hidden!important; text-overflow:ellipsis!important; }
-  main > div > header > div:last-child { display:flex!important; align-items:center!important; justify-content:flex-end!important; gap:3px!important; white-space:nowrap!important; }
-  main > div > header a,main > div > header button { padding:4px 5px!important; font-size:8px!important; line-height:1!important; white-space:nowrap!important; }
-  main > div > div.grid { margin-top:4px!important; gap:4px!important; position:relative!important; }
+  /* Top page header: keep the title area and action buttons in separate columns. */
+  main > div > header {
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr) auto!important;
+    align-items:center!important;
+    gap:7px!important;
+    height:76px!important;
+    min-height:76px!important;
+    max-height:76px!important;
+    box-sizing:border-box!important;
+    padding:8px 10px!important;
+    overflow:hidden!important;
+  }
+  main > div > header > div:first-child {
+    min-width:0!important;
+    max-width:100%!important;
+    display:flex!important;
+    align-items:center!important;
+    gap:7px!important;
+    overflow:hidden!important;
+  }
+  /* BandaLogo is 44px in JSX; constrain its rendered box on small screens. */
+  main > div > header > div:first-child > *:first-child {
+    width:36px!important;
+    height:36px!important;
+    min-width:36px!important;
+    min-height:36px!important;
+    max-width:36px!important;
+    max-height:36px!important;
+    flex:0 0 36px!important;
+  }
+  main > div > header > div:first-child > div:last-child {
+    min-width:0!important;
+    overflow:hidden!important;
+  }
+  main > div > header h1,
+  main > div > header .text-lg {
+    font-size:12px!important;
+    line-height:1.05!important;
+    margin:0!important;
+    white-space:nowrap!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
+  }
+  main > div > header p,
+  main > div > header .text-xs {
+    font-size:7px!important;
+    line-height:1.05!important;
+    margin:2px 0 0!important;
+    white-space:nowrap!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
+  }
+  main > div > header > div:last-child {
+    display:flex!important;
+    align-items:center!important;
+    justify-content:flex-end!important;
+    flex:0 0 auto!important;
+    gap:3px!important;
+    white-space:nowrap!important;
+  }
+  main > div > header a,
+  main > div > header button {
+    padding:4px 6px!important;
+    font-size:8px!important;
+    line-height:1!important;
+    white-space:nowrap!important;
+  }
 
-  /* Group list. */
-  main > div > div.grid > aside { max-height:19vh!important; overflow:hidden!important; }
+  main > div > div.grid {
+    margin-top:4px!important;
+    gap:0!important;
+    position:relative!important;
+  }
+
+  /* Group list is normal on the group home. */
+  main > div > div.grid > aside {
+    max-height:19vh!important;
+    overflow:hidden!important;
+  }
   main > div > div.grid > aside > div:first-child { padding:5px 8px!important; }
   main > div > div.grid > aside > div:first-child .font-bold { font-size:12px!important; line-height:1!important; }
   main > div > div.grid > aside > div:first-child .text-xs { font-size:8px!important; line-height:1!important; }
   main > div > div.grid > aside > div:last-child { max-height:14vh!important; overflow-y:auto!important; }
-  main > div > div.grid > aside button { box-sizing:border-box!important; width:100%!important; height:50px!important; min-height:50px!important; max-height:50px!important; padding:4px 42px 4px 8px!important; overflow:hidden!important; display:flex!important; align-items:center!important; }
-  main > div > div.grid > aside button .h-10 { width:32px!important; height:32px!important; min-width:32px!important; min-height:32px!important; max-width:32px!important; max-height:32px!important; flex:0 0 32px!important; }
+  main > div > div.grid > aside button {
+    box-sizing:border-box!important;
+    width:100%!important;
+    height:50px!important;
+    min-height:50px!important;
+    max-height:50px!important;
+    padding:4px 42px 4px 8px!important;
+    overflow:hidden!important;
+    display:flex!important;
+    align-items:center!important;
+  }
+  main > div > div.grid > aside button .h-10 {
+    width:32px!important;
+    height:32px!important;
+    min-width:32px!important;
+    min-height:32px!important;
+    max-width:32px!important;
+    max-height:32px!important;
+    flex:0 0 32px!important;
+  }
   main > div > div.grid > aside button .font-semibold { font-size:11px!important; line-height:1.05!important; }
   main > div > div.grid > aside button .text-xs.text-slate-500.mt-1 { display:block!important; font-size:7px!important; line-height:1!important; margin-top:1px!important; }
 
-  /* IMPORTANT: restore the actual selected-group header on mobile. */
+  /* When a group is open, the sidebar/card above it is the duplicate identity.
+     Hide it only on mobile. The list remains available when no group is selected. */
+  main > div > div.grid:has(> section > .group-mobile-header) > aside {
+    display:none!important;
+  }
+  main > div > div.grid:has(> section > .group-mobile-header) > section {
+    width:100%!important;
+    max-width:100%!important;
+    grid-column:1 / -1!important;
+  }
+
+  /* Selected-group header: this is the single group identity shown while chatting. */
   main > div > div.grid > section > div.group-mobile-header {
     position:relative!important;
     top:auto!important;
@@ -97,7 +196,6 @@ body { background:var(--background); color:var(--foreground); font-family:Arial,
     overflow:hidden!important;
     text-overflow:ellipsis!important;
   }
-  /* Hide the large desktop action row, but keep the mobile three-dot control. */
   main > div > div.grid > section > div.group-mobile-header > .group-desktop-actions { display:none!important; }
   main > div > div.grid > section > div.group-mobile-header > .group-mobile-actions {
     display:flex!important;
@@ -162,7 +260,28 @@ body { background:var(--background); color:var(--foreground); font-family:Arial,
     white-space:nowrap!important;
   }
 
-  main > div > div.grid > section { min-height:0!important; height:calc(100dvh - 195px)!important; max-height:calc(100dvh - 195px)!important; position:relative!important; }
-  main > div > div.grid > section > div.flex-1 { min-height:0!important; flex:1 1 auto!important; overflow-y:auto!important; padding:6px!important; margin-top:0!important; border-top:0!important; }
-  main > div > div.grid > section > div.p-3 { flex:0 0 auto!important; margin-top:auto!important; padding:5px!important; position:sticky!important; bottom:0!important; background:#ffffff!important; z-index:10!important; }
+  /* Chat panel fills the remaining mobile screen. */
+  main > div > div.grid > section {
+    min-height:0!important;
+    height:calc(100dvh - 86px)!important;
+    max-height:calc(100dvh - 86px)!important;
+    position:relative!important;
+  }
+  main > div > div.grid > section > div.flex-1 {
+    min-height:0!important;
+    flex:1 1 auto!important;
+    overflow-y:auto!important;
+    padding:6px!important;
+    margin-top:0!important;
+    border-top:0!important;
+  }
+  main > div > div.grid > section > div.p-3 {
+    flex:0 0 auto!important;
+    margin-top:auto!important;
+    padding:5px!important;
+    position:sticky!important;
+    bottom:0!important;
+    background:#ffffff!important;
+    z-index:10!important;
+  }
 }
