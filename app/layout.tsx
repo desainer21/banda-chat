@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import GlobalChatFeatures from "@/components/GlobalChatFeatures";
 import BandaNotificationWidget from "@/components/BandaNotificationWidget";
+import ChatNotificationBridge from "@/components/ChatNotificationBridge";
 import PWARegister from "@/components/PWARegister";
 
 const geistSans = Geist({
@@ -40,6 +41,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {children}
         <GlobalChatFeatures />
         <BandaNotificationWidget />
+        <ChatNotificationBridge />
         <PWARegister />
       </body>
     </html>
