@@ -3,8 +3,8 @@
   "version": "0.1.1",
   "private": true,
   "scripts": {
-    "dev": "node scripts/patch-contact-isolation.cjs && node scripts/patch-group-contact-filter.cjs && node scripts/restore-private-contact-auto.cjs && node scripts/patch-group-clear-all.cjs && next dev",
-    "build": "node scripts/patch-contact-isolation.cjs && node scripts/patch-group-contact-filter.cjs && node scripts/restore-private-contact-auto.cjs && node scripts/patch-group-clear-all.cjs && next build",
+    "dev": "node scripts/patch-contact-isolation.cjs && node scripts/patch-group-contact-filter.cjs && node scripts/restore-private-contact-auto.cjs && next dev",
+    "build": "node scripts/patch-contact-isolation.cjs && node scripts/patch-group-contact-filter.cjs && node scripts/restore-private-contact-auto.cjs && next build",
     "start": "next start",
     "lint": "eslint"
   },
