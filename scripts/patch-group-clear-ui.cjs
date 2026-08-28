@@ -7,9 +7,9 @@ if (!fs.existsSync(filePath)) process.exit(0);
 const source = fs.readFileSync(filePath, "utf8");
 let next = source;
 
-if (!next.includes("banda-group-clear-ui-v2")) {
+if (!next.includes("banda-group-clear-ui-v3")) {
   const stateMarker = `  const [editAvatarPreview, setEditAvatarPreview] = useState<string | null>(null);`;
-  const stateReplacement = `${stateMarker}\n  // banda-group-clear-ui-v2\n  const [clearingAllMessages, setClearingAllMessages] = useState(false);`;
+  const stateReplacement = `${stateMarker}\n  // banda-group-clear-ui-v3\n  const [clearingAllMessages, setClearingAllMessages] = useState(false);`;
 
   if (!next.includes(stateMarker)) {
     console.error("Banda Chat: group clear UI state marker not found.");
@@ -18,7 +18,7 @@ if (!next.includes("banda-group-clear-ui-v2")) {
   next = next.replace(stateMarker, stateReplacement);
 
   const functionMarker = `  async function copyInvite() {`;
-  const functionReplacement = `  async function clearAllGroupMessages() {\n    if (!selectedGroup || !isAdmin || clearingAllMessages) return;\n    if (!window.confirm("Hapus SEMUA pesan dan gambar di grup ini? Tindakan ini tidak dapat dibatalkan.")) return;\n    setClearingAllMessages(true);\n    setError("");\n    try {\n      const { data: deletedCount, error: clearError } = await supabase.rpc(\"clear_banda_group_messages\", { p_conversation_id: selectedGroup.id });\n      if (clearError) throw new Error(clearError.message);\n      setMessages([]);\n      await loadUnreadCounts();\n      setShowMobileGroupMenu(false);\n      const count = Number(deletedCount) || 0;\n      if (count > 0) {\n        console.info(\`Banda Chat: \\${count} pesan grup berhasil dihapus.\`);\n      }\n    } catch (err) {\n      setError(err instanceof Error ? err.message : "Semua pesan gagal dihapus.");\n    } finally {\n      setClearingAllMessages(false);\n    }\n  }\n\n${functionMarker}`;
+  const functionReplacement = `  async function clearAllGroupMessages() {\n    if (!selectedGroup || !isAdmin || clearingAllMessages) return;\n    if (!window.confirm("Hapus SEMUA pesan dan gambar di grup ini? Tindakan ini tidak dapat dibatalkan.")) return;\n    setClearingAllMessages(true);\n    setError("");\n    try {\n      const { data: deletedCount, error: clearError } = await supabase.rpc("clear_banda_group_messages", { p_conversation_id: selectedGroup.id });\n      if (clearError) throw new Error(clearError.message);\n      setMessages([]);\n      await loadUnreadCounts();\n      setShowMobileGroupMenu(false);\n      const count = Number(deletedCount) || 0;\n      if (count > 0) {\n        console.info("Banda Chat: " + count + " pesan grup berhasil dihapus.");\n      }\n    } catch (err) {\n      setError(err instanceof Error ? err.message : "Semua pesan gagal dihapus.");\n    } finally {\n      setClearingAllMessages(false);\n    }\n  }\n\n${functionMarker}`;
 
   if (!next.includes(functionMarker)) {
     console.error("Banda Chat: group clear function marker not found.");
