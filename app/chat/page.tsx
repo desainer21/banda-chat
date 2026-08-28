@@ -67,6 +67,10 @@ export default function ChatPage() {
   const [users, setUsers] = useState<Profile[]>([]);
   const [contactInfo, setContactInfo] =
     useState<Record<string, ContactInfo>>({});
+
+  /* Percakapan yang dihapus hanya untuk akun ini. Pesan tetap ada di database. */
+  const [hiddenConversations, setHiddenConversations] =
+    useState<Record<string, number>>({});
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [selectedConversation, setSelectedConversation] =
     useState<Conversation | null>(null);
@@ -190,6 +194,115 @@ export default function ChatPage() {
     selectedConversationIdRef.current =
       selectedConversation?.id || null;
   }, [selectedConversation]);
+
+  function getHiddenConversationMap() {
+    if (typeof window === "undefined" || !currentUserId) {
+      return hiddenConversations;
+    }
+
+    try {
+      const key = `banda-chat-hidden-conversations-${currentUserId}`;
+      const raw = window.localStorage.getItem(key);
+      if (!raw) return hiddenConversations;
+
+      const parsed = JSON.parse(raw) as Record<string, number>;
+      if (!parsed || typeof parsed !== "object") return hiddenConversations;
+
+      return Object.fromEntries(
+        Object.entries(parsed).filter(
+          ([, value]) => typeof value === "number" && Number.isFinite(value)
+        )
+      );
+    } catch (error) {
+      console.error("Load hidden conversations error:", error);
+      return hiddenConversations;
+    }
+  }
+
+  function saveHiddenConversationMap(nextMap: Record<string, number>) {
+    if (typeof window === "undefined" || !currentUserId) return;
+
+    try {
+      window.localStorage.setItem(
+        `banda-chat-hidden-conversations-${currentUserId}`,
+        JSON.stringify(nextMap)
+      );
+    } catch (error) {
+      console.error("Save hidden conversations error:", error);
+    }
+  }
+
+  function getConversationHiddenAt(conversationId: string) {
+    return getHiddenConversationMap()[conversationId] || null;
+  }
+
+  function hideConversationForCurrentUser(conversationId: string) {
+    const hiddenAt = Date.now();
+    const nextMap = {
+      ...getHiddenConversationMap(),
+      [conversationId]: hiddenAt,
+    };
+
+    saveHiddenConversationMap(nextMap);
+    setHiddenConversations(nextMap);
+    return hiddenAt;
+  }
+
+  function deleteContactFromHome(user: Profile) {
+    const info = contactInfo[user.id];
+    if (!info?.conversationId) return;
+
+    const confirmed = window.confirm(
+      `Hapus ${user.full_name} dari daftar kontak?\n\nRiwayat chat tidak dihapus dari akun teman. Riwayat lama hanya disembunyikan dari akun Anda sampai ada pesan baru.`
+    );
+
+    if (!confirmed) return;
+
+    hideConversationForCurrentUser(info.conversationId);
+
+    setContactInfo((previous) => {
+      const next = { ...previous };
+      delete next[user.id];
+      return next;
+    });
+
+    if (selectedConversation?.id === info.conversationId) {
+      setSelectedConversation(null);
+      setSelectedUser(null);
+      setMessages([]);
+      setMessageText("");
+      setMobileChatOpen(false);
+    }
+  }
+
+  function deleteCurrentConversationForMe() {
+    if (!selectedConversation || !selectedUser) return;
+
+    const confirmed = window.confirm(
+      `Hapus seluruh percakapan dengan ${selectedUser.full_name} dari akun Anda?\n\nPesan tetap ada pada akun teman Anda.`
+    );
+
+    if (!confirmed) return;
+
+    hideConversationForCurrentUser(selectedConversation.id);
+
+    setContactInfo((previous) => {
+      const next = { ...previous };
+      delete next[selectedUser.id];
+      return next;
+    });
+
+    setMessages([]);
+    setSelectedConversation(null);
+    setSelectedUser(null);
+    setMessageText("");
+    setMobileChatOpen(false);
+  }
+
+  useEffect(() => {
+    if (!currentUserId || typeof window === "undefined") return;
+    setHiddenConversations(getHiddenConversationMap());
+  }, [currentUserId]);
 
   /* ============================================================
      ATTACHMENT HELPERS
@@ -1194,14 +1307,19 @@ export default function ChatPage() {
         conversationToUser
       ).forEach(
         ([conversationId, userId]) => {
+          const hiddenAt =
+            getConversationHiddenAt(conversationId);
+
           const conversationMessages =
-            (
-              allMessages || []
-            ).filter(
-              (message) =>
-                message.conversation_id ===
-                conversationId
-            );
+            (allMessages || []).filter((message) => {
+              if (message.conversation_id !== conversationId) return false;
+              if (!hiddenAt) return true;
+              return new Date(message.created_at).getTime() >= hiddenAt;
+            });
+
+          if (hiddenAt && conversationMessages.length === 0) {
+            return;
+          }
 
           const unreadCount =
             conversationMessages.filter(
@@ -1270,42 +1388,7 @@ export default function ChatPage() {
         }
       );
 
-      setContactInfo((previous) => {
-        const next = { ...previous };
-
-        Object.entries(aggregatedInfo).forEach(
-          ([userId, info]) => {
-            const existing = next[userId];
-
-            if (!existing) {
-              next[userId] = info;
-              return;
-            }
-
-            const existingTime = existing.lastMessageAt
-              ? new Date(existing.lastMessageAt).getTime()
-              : 0;
-
-            const incomingTime = info.lastMessageAt
-              ? new Date(info.lastMessageAt).getTime()
-              : 0;
-
-            if (incomingTime >= existingTime) {
-              next[userId] = {
-                ...existing,
-                ...info,
-              };
-            } else {
-              next[userId] = {
-                ...info,
-                ...existing,
-              };
-            }
-          }
-        );
-
-        return next;
-      });
+      setContactInfo(aggregatedInfo);
     } catch (error) {
       console.error(
         "Load contact info error:",
@@ -1794,8 +1877,17 @@ export default function ChatPage() {
         );
       }
 
+      const hiddenAt =
+        getConversationHiddenAt(conversationId);
+
+      const visibleMessages =
+        (data || []).filter((message) => {
+          if (!hiddenAt) return true;
+          return new Date(message.created_at).getTime() >= hiddenAt;
+        });
+
       setMessages(
-        data || []
+        visibleMessages
       );
 
       await markConversationRead(
@@ -3555,25 +3647,20 @@ export default function ChatPage() {
                         );
 
                       return (
-                        <button
-                          key={
-                            user.id
-                          }
-                          type="button"
-                          onClick={() =>
-                            void startChat(
-                              user
-                            )
-                          }
-                          disabled={
-                            startingChat
-                          }
-                          className={`w-full rounded-2xl border p-3 text-left transition ${
+                        <div
+                          key={user.id}
+                          className={`flex items-stretch gap-1 rounded-2xl border p-1 transition ${
                             isSelected
                               ? "border-blue-200 bg-blue-50 shadow-sm"
                               : "border-slate-100 bg-white hover:border-blue-100 hover:bg-blue-50/50 hover:shadow-sm"
-                          } disabled:cursor-not-allowed disabled:opacity-60`}
+                          }`}
                         >
+                          <button
+                            type="button"
+                            onClick={() => void startChat(user)}
+                            disabled={startingChat}
+                            className="min-w-0 flex-1 rounded-xl p-2 text-left disabled:cursor-not-allowed disabled:opacity-60"
+                          >
                           <div className="flex items-center gap-3">
                             <div className="relative shrink-0">
                               {user.avatar_url ? (
@@ -3647,7 +3734,22 @@ export default function ChatPage() {
                               </p>
                             </div>
                           </div>
-                        </button>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              deleteContactFromHome(user);
+                            }}
+                            disabled={startingChat}
+                            className="flex h-10 w-10 shrink-0 items-center justify-center self-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                            title={`Hapus ${user.full_name} dari daftar kontak`}
+                            aria-label={`Hapus ${user.full_name} dari daftar kontak`}
+                          >
+                            🗑️
+                          </button>
+                        </div>
                       );
                     }
                   )}
@@ -3772,6 +3874,19 @@ export default function ChatPage() {
                       )}
                     </div>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      deleteCurrentConversationForMe();
+                    }}
+                    className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-red-500 transition hover:bg-red-50 hover:text-red-600"
+                    title="Hapus seluruh chat dari akun saya"
+                    aria-label="Hapus seluruh chat dari akun saya"
+                  >
+                    🗑️
+                  </button>
                 </div>
 
                 {/* PESAN */}
