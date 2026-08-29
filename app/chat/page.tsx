@@ -54,12 +54,6 @@ type ContactInfo = {
   unreadCount: number;
 };
 
-type ContactRelation = {
-  deletedAt: string | null;
-  chatClearedAt: string | null;
-  blockedAt: string | null;
-};
-
 type PresenceData = {
   user_id?: string;
   online_at?: string;
@@ -74,9 +68,6 @@ export default function ChatPage() {
   const [contactInfo, setContactInfo] =
     useState<Record<string, ContactInfo>>({});
 
-  /* Status kontak/chat tersimpan di database contact_relations. */
-  const [contactRelations, setContactRelations] =
-    useState<Record<string, ContactRelation>>({});
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [selectedConversation, setSelectedConversation] =
     useState<Conversation | null>(null);
@@ -106,11 +97,6 @@ export default function ChatPage() {
 
   const [openMessageMenuId, setOpenMessageMenuId] =
     useState<string | null>(null);
-
-  const [openContactMenuId, setOpenContactMenuId] =
-    useState<string | null>(null);
-
-  const [openChatMenu, setOpenChatMenu] = useState(false);
 
   const [editingMessageId, setEditingMessageId] =
     useState<string | null>(null);
@@ -206,159 +192,232 @@ export default function ChatPage() {
       selectedConversation?.id || null;
   }, [selectedConversation]);
 
-  async function loadContactRelations(authUserId: string) {
+  /* ============================================================
+     CONTACT RELATIONS
+     Status kontak dan batas riwayat disimpan di database.
+     Tidak menggunakan localStorage.
+     ============================================================ */
+
+  async function getContactRelation(
+    ownerId: string,
+    contactId: string
+  ) {
     const { data, error } = await supabase
       .from("contact_relations")
-      .select("contact_id, deleted_at, chat_cleared_at, blocked_at")
-      .eq("owner_id", authUserId);
-
-    if (error) {
-      console.error("Load contact relations error:", error);
-      return;
-    }
-
-    const next: Record<string, ContactRelation> = {};
-    (data || []).forEach((row) => {
-      next[row.contact_id] = {
-        deletedAt: row.deleted_at,
-        chatClearedAt: row.chat_cleared_at,
-        blockedAt: row.blocked_at,
-      };
-    });
-    setContactRelations(next);
-  }
-
-  async function upsertContactRelation(
-    contactId: string,
-    values: { deleted_at?: string | null; chat_cleared_at?: string | null; blocked_at?: string | null }
-  ) {
-    if (!currentUserId || !contactId) return false;
-
-    const { data: existing, error: selectError } = await supabase
-      .from("contact_relations")
-      .select("owner_id, contact_id")
-      .eq("owner_id", currentUserId)
+      .select(
+        "owner_id, contact_id, deleted_at, chat_cleared_at, blocked_at"
+      )
+      .eq("owner_id", ownerId)
       .eq("contact_id", contactId)
       .maybeSingle();
 
+    if (error) {
+      console.error("Get contact relation error:", error);
+      return null;
+    }
+
+    return data;
+  }
+
+  async function activateContactRelation(
+    ownerId: string,
+    contactId: string
+  ) {
+    const existing = await getContactRelation(
+      ownerId,
+      contactId
+    );
+
+    const now = new Date().toISOString();
+
+    if (existing?.blocked_at) {
+      throw new Error(
+        "Kontak ini sedang diblokir."
+      );
+    }
+
+    if (existing?.deleted_at) {
+      const { error } = await supabase
+        .from("contact_relations")
+        .update({
+          deleted_at: null,
+          chat_cleared_at: now,
+        })
+        .eq("owner_id", ownerId)
+        .eq("contact_id", contactId);
+
+      if (error) {
+        throw new Error(
+          "Gagal mengaktifkan kembali kontak: " +
+            error.message
+        );
+      }
+
+      return now;
+    }
+
+    if (!existing) {
+      const { error } = await supabase
+        .from("contact_relations")
+        .insert({
+          owner_id: ownerId,
+          contact_id: contactId,
+          deleted_at: null,
+          chat_cleared_at: null,
+        });
+
+      if (error) {
+        throw new Error(
+          "Gagal membuat relasi kontak: " +
+            error.message
+        );
+      }
+    }
+
+    return existing?.chat_cleared_at || null;
+  }
+
+  async function deleteContactRelation(
+    ownerId: string,
+    contactId: string
+  ) {
+    const now = new Date().toISOString();
+
+    const { data: existing, error: selectError } =
+      await supabase
+        .from("contact_relations")
+        .select("owner_id, contact_id")
+        .eq("owner_id", ownerId)
+        .eq("contact_id", contactId)
+        .maybeSingle();
+
     if (selectError) {
-      console.error("Find contact relation error:", selectError);
-      setErrorMessage("Status kontak gagal dibaca: " + selectError.message);
-      return false;
+      throw new Error(
+        "Gagal membaca relasi kontak: " +
+          selectError.message
+      );
     }
 
     if (existing) {
       const { error } = await supabase
         .from("contact_relations")
-        .update(values)
-        .eq("owner_id", currentUserId)
+        .update({
+          deleted_at: now,
+          chat_cleared_at: now,
+        })
+        .eq("owner_id", ownerId)
         .eq("contact_id", contactId);
 
       if (error) {
-        console.error("Update contact relation error:", error);
-        setErrorMessage("Status kontak gagal disimpan: " + error.message);
-        return false;
+        throw new Error(
+          "Gagal menghapus kontak: " +
+            error.message
+        );
       }
     } else {
       const { error } = await supabase
         .from("contact_relations")
         .insert({
-          owner_id: currentUserId,
+          owner_id: ownerId,
           contact_id: contactId,
-          ...values,
+          deleted_at: now,
+          chat_cleared_at: now,
         });
 
       if (error) {
-        console.error("Insert contact relation error:", error);
-        setErrorMessage("Status kontak gagal disimpan: " + error.message);
-        return false;
+        throw new Error(
+          "Gagal menyimpan penghapusan kontak: " +
+            error.message
+        );
       }
     }
 
-    await loadContactRelations(currentUserId);
-    return true;
-  }
-
-  function relationFor(userId: string) {
-    return contactRelations[userId] || {
-      deletedAt: null,
-      chatClearedAt: null,
-      blockedAt: null,
-    };
-  }
-
-  async function deleteContactFromHome(user: Profile) {
-    const info = contactInfo[user.id];
-    if (!info?.conversationId) return;
-
-    const confirmed = window.confirm(
-      `Hapus ${user.full_name} dari daftar kontak?\n\nRiwayat pesan teman tidak akan dihapus. Status hapus hanya berlaku untuk akun Anda.`
-    );
-    if (!confirmed) return;
-
-    const saved = await upsertContactRelation(user.id, {
-      deleted_at: new Date().toISOString(),
-    });
-    if (!saved) return;
-
-    setContactInfo((previous) => {
-      const next = { ...previous };
-      delete next[user.id];
-      return next;
-    });
-
-    if (selectedConversation?.id === info.conversationId) {
-      setSelectedConversation(null);
-      setSelectedUser(null);
-      setMessages([]);
-      setMessageText("");
-      setMobileChatOpen(false);
-    }
+    return now;
   }
 
   async function deleteCurrentConversationForMe() {
-    if (!selectedConversation || !selectedUser) return;
+    if (!selectedConversation || !selectedUser || !currentUserId) {
+      return;
+    }
 
     const confirmed = window.confirm(
       `Hapus seluruh percakapan dengan ${selectedUser.full_name} dari akun Anda?\n\nPesan tetap ada pada akun teman Anda.`
     );
+
     if (!confirmed) return;
 
-    const saved = await upsertContactRelation(selectedUser.id, {
-      chat_cleared_at: new Date().toISOString(),
-    });
-    if (!saved) return;
+    try {
+      await deleteContactRelation(
+        currentUserId,
+        selectedUser.id
+      );
 
-    setMessages([]);
-    setContactInfo((previous) => {
-      const next = { ...previous };
-      if (next[selectedUser.id]) {
-        next[selectedUser.id] = {
-          ...next[selectedUser.id],
-          lastMessage: null,
-          lastMessageAt: null,
-          unreadCount: 0,
-        };
-      }
-      return next;
-    });
+      setContactInfo((previous) => {
+        const next = { ...previous };
+        delete next[selectedUser.id];
+        return next;
+      });
+
+      setMessages([]);
+      setSelectedConversation(null);
+      setSelectedUser(null);
+      setMessageText("");
+      setMobileChatOpen(false);
+    } catch (error) {
+      console.error(
+        "Delete current conversation error:",
+        error
+      );
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Gagal menghapus percakapan."
+      );
+    }
   }
 
-  async function toggleBlockSelectedUser() {
-    if (!selectedUser) return;
+  async function deleteContactFromHome(user: Profile) {
+    if (!currentUserId) return;
 
-    const relation = relationFor(selectedUser.id);
-    const willBlock = !relation.blockedAt;
+    const info = contactInfo[user.id];
+    if (!info?.conversationId) return;
+
     const confirmed = window.confirm(
-      willBlock
-        ? `Blokir ${selectedUser.full_name}?\n\nAkun ini tidak akan dapat mengirim pesan kepada Anda.`
-        : `Buka blokir ${selectedUser.full_name}?`
+      `Hapus ${user.full_name} dari daftar kontak?\n\nRiwayat chat tetap ada di database, tetapi riwayat lama akan disembunyikan dari akun Anda. Jika kontak ini ditemukan kembali, chat akan dimulai dari pesan baru.`
     );
+
     if (!confirmed) return;
 
-    await upsertContactRelation(selectedUser.id, {
-      blocked_at: willBlock ? new Date().toISOString() : null,
-    });
+    try {
+      await deleteContactRelation(
+        currentUserId,
+        user.id
+      );
+
+      setContactInfo((previous) => {
+        const next = { ...previous };
+        delete next[user.id];
+        return next;
+      });
+
+      if (selectedConversation?.id === info.conversationId) {
+        setSelectedConversation(null);
+        setSelectedUser(null);
+        setMessages([]);
+        setMessageText("");
+        setMobileChatOpen(false);
+      }
+    } catch (error) {
+      console.error(
+        "Delete contact error:",
+        error
+      );
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Gagal menghapus kontak."
+      );
+    }
   }
 
   /* ============================================================
@@ -1069,7 +1128,6 @@ export default function ChatPage() {
             setCurrentUserId("");
             setProfile(null);
             setContactInfo({});
-            setContactRelations({});
             setUsers([]);
 
             router.replace("/login");
@@ -1165,7 +1223,6 @@ export default function ChatPage() {
         authUserId
       );
 
-      await loadContactRelations(authUserId);
       await loadContactInfo(
         authUserId
       );
@@ -1250,20 +1307,45 @@ export default function ChatPage() {
   ) {
     try {
       const {
+        data: relations,
+        error: relationsError,
+      } = await supabase
+        .from("contact_relations")
+        .select(
+          "owner_id, contact_id, deleted_at, chat_cleared_at, blocked_at"
+        )
+        .eq("owner_id", authUserId);
+
+      if (relationsError) {
+        console.error(
+          "Load contact relations error:",
+          relationsError
+        );
+        return;
+      }
+
+      const relationByContact: Record<string, {
+        deleted_at: string | null;
+        chat_cleared_at: string | null;
+        blocked_at: string | null;
+      }> = {};
+
+      (relations || []).forEach((relation) => {
+        relationByContact[relation.contact_id] = {
+          deleted_at: relation.deleted_at,
+          chat_cleared_at: relation.chat_cleared_at,
+          blocked_at: relation.blocked_at,
+        };
+      });
+
+      const {
         data: myMemberships,
         error: myMembershipError,
       } =
         await supabase
-          .from(
-            "conversation_members"
-          )
-          .select(
-            "conversation_id"
-          )
-          .eq(
-            "user_id",
-            authUserId
-          );
+          .from("conversation_members")
+          .select("conversation_id")
+          .eq("user_id", authUserId);
 
       if (myMembershipError) {
         console.error(
@@ -1277,13 +1359,13 @@ export default function ChatPage() {
         !myMemberships ||
         myMemberships.length === 0
       ) {
+        setContactInfo({});
         return;
       }
 
       const conversationIds =
         myMemberships.map(
-          (item) =>
-            item.conversation_id
+          (item) => item.conversation_id
         );
 
       const {
@@ -1291,9 +1373,7 @@ export default function ChatPage() {
         error: allMembersError,
       } =
         await supabase
-          .from(
-            "conversation_members"
-          )
+          .from("conversation_members")
           .select(
             "conversation_id, user_id"
           )
@@ -1315,19 +1395,15 @@ export default function ChatPage() {
         string
       > = {};
 
-      allMembers?.forEach(
-        (member) => {
-          if (
-            member.user_id !==
-            authUserId
-          ) {
-            conversationToUser[
-              member.conversation_id
-            ] =
-              member.user_id;
-          }
+      allMembers?.forEach((member) => {
+        if (
+          member.user_id !== authUserId
+        ) {
+          conversationToUser[
+            member.conversation_id
+          ] = member.user_id;
         }
-      );
+      });
 
       const {
         data: allMessages,
@@ -1344,9 +1420,7 @@ export default function ChatPage() {
           )
           .order(
             "created_at",
-            {
-              ascending: false,
-            }
+            { ascending: false }
           );
 
       if (messagesError) {
@@ -1357,28 +1431,6 @@ export default function ChatPage() {
         return;
       }
 
-      const {
-        data: relations,
-        error: relationsError,
-      } = await supabase
-        .from("contact_relations")
-        .select("contact_id, deleted_at, chat_cleared_at, blocked_at")
-        .eq("owner_id", authUserId);
-
-      if (relationsError) {
-        console.error("Load contact relations in contacts error:", relationsError);
-      }
-
-      const relationMap: Record<string, ContactRelation> = {};
-      (relations || []).forEach((row) => {
-        relationMap[row.contact_id] = {
-          deletedAt: row.deleted_at,
-          chatClearedAt: row.chat_cleared_at,
-          blockedAt: row.blocked_at,
-        };
-      });
-      setContactRelations(relationMap);
-
       const aggregatedInfo: Record<
         string,
         ContactInfo
@@ -1388,21 +1440,52 @@ export default function ChatPage() {
         conversationToUser
       ).forEach(
         ([conversationId, userId]) => {
-          const relation = relationMap[userId];
-          if (relation?.deletedAt) {
+          const relation =
+            relationByContact[userId];
+
+          /* Kontak yang dihapus/blokir tidak tampil di beranda. */
+          if (
+            relation?.deleted_at ||
+            relation?.blocked_at
+          ) {
             return;
           }
 
-          const clearedAt = relation?.chatClearedAt
-            ? new Date(relation.chatClearedAt).getTime()
-            : null;
+          const clearedAt =
+            relation?.chat_cleared_at
+              ? new Date(
+                  relation.chat_cleared_at
+                ).getTime()
+              : null;
 
           const conversationMessages =
-            (allMessages || []).filter((message) => {
-              if (message.conversation_id !== conversationId) return false;
-              if (!clearedAt) return true;
-              return new Date(message.created_at).getTime() > clearedAt;
-            });
+            (allMessages || []).filter(
+              (message) => {
+                if (
+                  message.conversation_id !==
+                  conversationId
+                ) {
+                  return false;
+                }
+
+                if (!clearedAt) {
+                  return true;
+                }
+
+                return (
+                  new Date(
+                    message.created_at
+                  ).getTime() > clearedAt
+                );
+              }
+            );
+
+          if (
+            clearedAt &&
+            conversationMessages.length === 0
+          ) {
+            return;
+          }
 
           const unreadCount =
             conversationMessages.filter(
@@ -1413,8 +1496,7 @@ export default function ChatPage() {
             ).length;
 
           const lastMessage =
-            conversationMessages.length >
-            0
+            conversationMessages.length > 0
               ? conversationMessages[0]
               : null;
 
@@ -1460,18 +1542,18 @@ export default function ChatPage() {
           ) {
             existing.conversationId =
               conversationId;
-
             existing.lastMessage =
               lastMessage?.content ||
               null;
-
             existing.lastMessageAt =
               currentLastMessageAt;
           }
         }
       );
 
-      setContactInfo(aggregatedInfo);
+      setContactInfo(
+        aggregatedInfo
+      );
     } catch (error) {
       console.error(
         "Load contact info error:",
@@ -1829,8 +1911,6 @@ export default function ChatPage() {
     }
 
     setStartingChat(true);
-    setOpenChatMenu(false);
-    setOpenContactMenuId(null);
     setSelectedUser(user);
     setErrorMessage("");
 
@@ -1881,10 +1961,15 @@ export default function ChatPage() {
         );
       }
 
-      const relation = relationFor(user.id);
-      if (relation.deletedAt) {
-        await upsertContactRelation(user.id, { deleted_at: null });
-      }
+      /*
+       * Jika kontak sebelumnya dihapus oleh akun ini,
+       * mengklik kontak dari hasil pencarian mengaktifkannya
+       * kembali dan membuat batas riwayat chat baru.
+       */
+      await activateContactRelation(
+        authUserId,
+        user.id
+      );
 
       const conversation: Conversation =
         {
@@ -1967,15 +2052,61 @@ export default function ChatPage() {
         );
       }
 
-      const relation = selectedUser ? relationFor(selectedUser.id) : null;
-      const clearedAt = relation?.chatClearedAt
-        ? new Date(relation.chatClearedAt).getTime()
-        : null;
+      /*
+       * Jangan memakai selectedUser di sini.
+       * setSelectedUser() bersifat asynchronous, sehingga ketika
+       * loadMessages() dipanggil tepat setelah startChat(), state
+       * bisa masih berisi user sebelumnya. Cari lawan chat langsung
+       * dari conversation_members agar batas chat selalu benar.
+       */
+      let clearedAt: number | null = null;
+
+      const {
+        data: conversationMembers,
+        error: conversationMembersError,
+      } = await supabase
+        .from("conversation_members")
+        .select("user_id")
+        .eq(
+          "conversation_id",
+          conversationId
+        );
+
+      if (conversationMembersError) {
+        throw new Error(
+          conversationMembersError.message
+        );
+      }
+
+      const otherMember =
+        (conversationMembers || []).find(
+          (member) =>
+            member.user_id !== authUserId
+        );
+
+      if (otherMember?.user_id) {
+        const relation =
+          await getContactRelation(
+            authUserId,
+            otherMember.user_id
+          );
+
+        if (relation?.chat_cleared_at) {
+          clearedAt = new Date(
+            relation.chat_cleared_at
+          ).getTime();
+        }
+      }
 
       const visibleMessages =
         (data || []).filter((message) => {
           if (!clearedAt) return true;
-          return new Date(message.created_at).getTime() > clearedAt;
+
+          return (
+            new Date(
+              message.created_at
+            ).getTime() > clearedAt
+          );
         });
 
       setMessages(
@@ -2582,6 +2713,40 @@ export default function ChatPage() {
           }
         );
       }
+
+      /*
+       * Pesan baru selalu mengaktifkan kembali relasi
+       * pengirim dengan penerima. Ini membuat kontak
+       * langsung kembali ke beranda pengirim.
+       */
+      if (selectedUser?.id) {
+        await activateContactRelation(
+          senderId,
+          selectedUser.id
+        );
+      }
+
+      setContactInfo((previous) => {
+        const next = { ...previous };
+
+        if (selectedUser) {
+          const existing =
+            next[selectedUser.id];
+
+          next[selectedUser.id] = {
+            conversationId:
+              selectedConversation.id,
+            lastMessage: content,
+            lastMessageAt:
+              data?.created_at ||
+              new Date().toISOString(),
+            unreadCount:
+              existing?.unreadCount || 0,
+          };
+        }
+
+        return next;
+      });
 
       setMessageText("");
 
@@ -3544,14 +3709,6 @@ export default function ChatPage() {
             false
           );
         }
-
-        if (openContactMenuId) {
-          setOpenContactMenuId(null);
-        }
-
-        if (openChatMenu) {
-          setOpenChatMenu(false);
-        }
       }}
     >
       {/* HEADER */}
@@ -3836,42 +3993,19 @@ export default function ChatPage() {
                           </div>
                           </button>
 
-                          <div className="relative shrink-0 self-center">
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setOpenContactMenuId((previous) => previous === user.id ? null : user.id);
-                              }}
-                              disabled={startingChat}
-                              className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
-                              title="Menu kontak"
-                              aria-label={`Menu kontak ${user.full_name}`}
-                            >
-                              ⋮
-                            </button>
-                            {openContactMenuId === user.id && (
-                              <div
-                                onClick={(event) => event.stopPropagation()}
-                                className="absolute right-0 top-11 z-50 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => { setOpenContactMenuId(null); void deleteContactFromHome(user); }}
-                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50"
-                                >
-                                  🗑️ <span>Hapus Kontak</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => { setOpenContactMenuId(null); void startChat(user); }}
-                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                                >
-                                  💬 <span>Buka Chat</span>
-                                </button>
-                              </div>
-                            )}
-                          </div>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              deleteContactFromHome(user);
+                            }}
+                            disabled={startingChat}
+                            className="flex h-10 w-10 shrink-0 items-center justify-center self-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                            title={`Hapus ${user.full_name} dari daftar kontak`}
+                            aria-label={`Hapus ${user.full_name} dari daftar kontak`}
+                          >
+                            🗑️
+                          </button>
                         </div>
                       );
                     }
@@ -3998,42 +4132,18 @@ export default function ChatPage() {
                     </div>
                   </div>
 
-                  <div className="relative ml-auto shrink-0">
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setOpenChatMenu((previous) => !previous);
-                      }}
-                      className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
-                      title="Menu chat"
-                      aria-label="Menu chat"
-                    >
-                      ⋮
-                    </button>
-                    {openChatMenu && (
-                      <div
-                        onClick={(event) => event.stopPropagation()}
-                        className="absolute right-0 top-11 z-50 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => { setOpenChatMenu(false); void deleteCurrentConversationForMe(); }}
-                          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50"
-                        >
-                          🗑️ <span>Hapus Keseluruhan Pesan</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => { setOpenChatMenu(false); void toggleBlockSelectedUser(); }}
-                          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                        >
-                          {selectedUser && relationFor(selectedUser.id).blockedAt ? "🔓" : "🚫"}
-                          <span>{selectedUser && relationFor(selectedUser.id).blockedAt ? "Buka Blokir" : "Blokir"}</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      deleteCurrentConversationForMe();
+                    }}
+                    className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-red-500 transition hover:bg-red-50 hover:text-red-600"
+                    title="Hapus seluruh chat dari akun saya"
+                    aria-label="Hapus seluruh chat dari akun saya"
+                  >
+                    🗑️
+                  </button>
                 </div>
 
                 {/* PESAN */}
