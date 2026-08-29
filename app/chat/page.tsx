@@ -54,6 +54,12 @@ type ContactInfo = {
   unreadCount: number;
 };
 
+type ContactRelation = {
+  deletedAt: string | null;
+  chatClearedAt: string | null;
+  blockedAt: string | null;
+};
+
 type PresenceData = {
   user_id?: string;
   online_at?: string;
@@ -68,9 +74,9 @@ export default function ChatPage() {
   const [contactInfo, setContactInfo] =
     useState<Record<string, ContactInfo>>({});
 
-  /* Percakapan yang dihapus hanya untuk akun ini. Pesan tetap ada di database. */
-  const [hiddenConversations, setHiddenConversations] =
-    useState<Record<string, number>>({});
+  /* Status kontak/chat tersimpan di database contact_relations. */
+  const [contactRelations, setContactRelations] =
+    useState<Record<string, ContactRelation>>({});
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [selectedConversation, setSelectedConversation] =
     useState<Conversation | null>(null);
@@ -100,6 +106,11 @@ export default function ChatPage() {
 
   const [openMessageMenuId, setOpenMessageMenuId] =
     useState<string | null>(null);
+
+  const [openContactMenuId, setOpenContactMenuId] =
+    useState<string | null>(null);
+
+  const [openChatMenu, setOpenChatMenu] = useState(false);
 
   const [editingMessageId, setEditingMessageId] =
     useState<string | null>(null);
@@ -195,70 +206,100 @@ export default function ChatPage() {
       selectedConversation?.id || null;
   }, [selectedConversation]);
 
-  function getHiddenConversationMap() {
-    if (typeof window === "undefined" || !currentUserId) {
-      return hiddenConversations;
+  async function loadContactRelations(authUserId: string) {
+    const { data, error } = await supabase
+      .from("contact_relations")
+      .select("contact_id, deleted_at, chat_cleared_at, blocked_at")
+      .eq("owner_id", authUserId);
+
+    if (error) {
+      console.error("Load contact relations error:", error);
+      return;
     }
 
-    try {
-      const key = `banda-chat-hidden-conversations-${currentUserId}`;
-      const raw = window.localStorage.getItem(key);
-      if (!raw) return hiddenConversations;
+    const next: Record<string, ContactRelation> = {};
+    (data || []).forEach((row) => {
+      next[row.contact_id] = {
+        deletedAt: row.deleted_at,
+        chatClearedAt: row.chat_cleared_at,
+        blockedAt: row.blocked_at,
+      };
+    });
+    setContactRelations(next);
+  }
 
-      const parsed = JSON.parse(raw) as Record<string, number>;
-      if (!parsed || typeof parsed !== "object") return hiddenConversations;
+  async function upsertContactRelation(
+    contactId: string,
+    values: { deleted_at?: string | null; chat_cleared_at?: string | null; blocked_at?: string | null }
+  ) {
+    if (!currentUserId || !contactId) return false;
 
-      return Object.fromEntries(
-        Object.entries(parsed).filter(
-          ([, value]) => typeof value === "number" && Number.isFinite(value)
-        )
-      );
-    } catch (error) {
-      console.error("Load hidden conversations error:", error);
-      return hiddenConversations;
+    const { data: existing, error: selectError } = await supabase
+      .from("contact_relations")
+      .select("owner_id, contact_id")
+      .eq("owner_id", currentUserId)
+      .eq("contact_id", contactId)
+      .maybeSingle();
+
+    if (selectError) {
+      console.error("Find contact relation error:", selectError);
+      setErrorMessage("Status kontak gagal dibaca: " + selectError.message);
+      return false;
     }
-  }
 
-  function saveHiddenConversationMap(nextMap: Record<string, number>) {
-    if (typeof window === "undefined" || !currentUserId) return;
+    if (existing) {
+      const { error } = await supabase
+        .from("contact_relations")
+        .update(values)
+        .eq("owner_id", currentUserId)
+        .eq("contact_id", contactId);
 
-    try {
-      window.localStorage.setItem(
-        `banda-chat-hidden-conversations-${currentUserId}`,
-        JSON.stringify(nextMap)
-      );
-    } catch (error) {
-      console.error("Save hidden conversations error:", error);
+      if (error) {
+        console.error("Update contact relation error:", error);
+        setErrorMessage("Status kontak gagal disimpan: " + error.message);
+        return false;
+      }
+    } else {
+      const { error } = await supabase
+        .from("contact_relations")
+        .insert({
+          owner_id: currentUserId,
+          contact_id: contactId,
+          ...values,
+        });
+
+      if (error) {
+        console.error("Insert contact relation error:", error);
+        setErrorMessage("Status kontak gagal disimpan: " + error.message);
+        return false;
+      }
     }
+
+    await loadContactRelations(currentUserId);
+    return true;
   }
 
-  function getConversationHiddenAt(conversationId: string) {
-    return getHiddenConversationMap()[conversationId] || null;
-  }
-
-  function hideConversationForCurrentUser(conversationId: string) {
-    const hiddenAt = Date.now();
-    const nextMap = {
-      ...getHiddenConversationMap(),
-      [conversationId]: hiddenAt,
+  function relationFor(userId: string) {
+    return contactRelations[userId] || {
+      deletedAt: null,
+      chatClearedAt: null,
+      blockedAt: null,
     };
-
-    saveHiddenConversationMap(nextMap);
-    setHiddenConversations(nextMap);
-    return hiddenAt;
   }
 
-  function deleteContactFromHome(user: Profile) {
+  async function deleteContactFromHome(user: Profile) {
     const info = contactInfo[user.id];
     if (!info?.conversationId) return;
 
     const confirmed = window.confirm(
-      `Hapus ${user.full_name} dari daftar kontak?\n\nRiwayat chat tidak dihapus dari akun teman. Riwayat lama hanya disembunyikan dari akun Anda sampai ada pesan baru.`
+      `Hapus ${user.full_name} dari daftar kontak?\n\nRiwayat pesan teman tidak akan dihapus. Status hapus hanya berlaku untuk akun Anda.`
     );
-
     if (!confirmed) return;
 
-    hideConversationForCurrentUser(info.conversationId);
+    const saved = await upsertContactRelation(user.id, {
+      deleted_at: new Date().toISOString(),
+    });
+    if (!saved) return;
 
     setContactInfo((previous) => {
       const next = { ...previous };
@@ -275,34 +316,50 @@ export default function ChatPage() {
     }
   }
 
-  function deleteCurrentConversationForMe() {
+  async function deleteCurrentConversationForMe() {
     if (!selectedConversation || !selectedUser) return;
 
     const confirmed = window.confirm(
       `Hapus seluruh percakapan dengan ${selectedUser.full_name} dari akun Anda?\n\nPesan tetap ada pada akun teman Anda.`
     );
-
     if (!confirmed) return;
 
-    hideConversationForCurrentUser(selectedConversation.id);
-
-    setContactInfo((previous) => {
-      const next = { ...previous };
-      delete next[selectedUser.id];
-      return next;
+    const saved = await upsertContactRelation(selectedUser.id, {
+      chat_cleared_at: new Date().toISOString(),
     });
+    if (!saved) return;
 
     setMessages([]);
-    setSelectedConversation(null);
-    setSelectedUser(null);
-    setMessageText("");
-    setMobileChatOpen(false);
+    setContactInfo((previous) => {
+      const next = { ...previous };
+      if (next[selectedUser.id]) {
+        next[selectedUser.id] = {
+          ...next[selectedUser.id],
+          lastMessage: null,
+          lastMessageAt: null,
+          unreadCount: 0,
+        };
+      }
+      return next;
+    });
   }
 
-  useEffect(() => {
-    if (!currentUserId || typeof window === "undefined") return;
-    setHiddenConversations(getHiddenConversationMap());
-  }, [currentUserId]);
+  async function toggleBlockSelectedUser() {
+    if (!selectedUser) return;
+
+    const relation = relationFor(selectedUser.id);
+    const willBlock = !relation.blockedAt;
+    const confirmed = window.confirm(
+      willBlock
+        ? `Blokir ${selectedUser.full_name}?\n\nAkun ini tidak akan dapat mengirim pesan kepada Anda.`
+        : `Buka blokir ${selectedUser.full_name}?`
+    );
+    if (!confirmed) return;
+
+    await upsertContactRelation(selectedUser.id, {
+      blocked_at: willBlock ? new Date().toISOString() : null,
+    });
+  }
 
   /* ============================================================
      ATTACHMENT HELPERS
@@ -1012,6 +1069,7 @@ export default function ChatPage() {
             setCurrentUserId("");
             setProfile(null);
             setContactInfo({});
+            setContactRelations({});
             setUsers([]);
 
             router.replace("/login");
@@ -1107,6 +1165,7 @@ export default function ChatPage() {
         authUserId
       );
 
+      await loadContactRelations(authUserId);
       await loadContactInfo(
         authUserId
       );
@@ -1298,6 +1357,28 @@ export default function ChatPage() {
         return;
       }
 
+      const {
+        data: relations,
+        error: relationsError,
+      } = await supabase
+        .from("contact_relations")
+        .select("contact_id, deleted_at, chat_cleared_at, blocked_at")
+        .eq("owner_id", authUserId);
+
+      if (relationsError) {
+        console.error("Load contact relations in contacts error:", relationsError);
+      }
+
+      const relationMap: Record<string, ContactRelation> = {};
+      (relations || []).forEach((row) => {
+        relationMap[row.contact_id] = {
+          deletedAt: row.deleted_at,
+          chatClearedAt: row.chat_cleared_at,
+          blockedAt: row.blocked_at,
+        };
+      });
+      setContactRelations(relationMap);
+
       const aggregatedInfo: Record<
         string,
         ContactInfo
@@ -1307,19 +1388,21 @@ export default function ChatPage() {
         conversationToUser
       ).forEach(
         ([conversationId, userId]) => {
-          const hiddenAt =
-            getConversationHiddenAt(conversationId);
+          const relation = relationMap[userId];
+          if (relation?.deletedAt) {
+            return;
+          }
+
+          const clearedAt = relation?.chatClearedAt
+            ? new Date(relation.chatClearedAt).getTime()
+            : null;
 
           const conversationMessages =
             (allMessages || []).filter((message) => {
               if (message.conversation_id !== conversationId) return false;
-              if (!hiddenAt) return true;
-              return new Date(message.created_at).getTime() >= hiddenAt;
+              if (!clearedAt) return true;
+              return new Date(message.created_at).getTime() > clearedAt;
             });
-
-          if (hiddenAt && conversationMessages.length === 0) {
-            return;
-          }
 
           const unreadCount =
             conversationMessages.filter(
@@ -1746,6 +1829,8 @@ export default function ChatPage() {
     }
 
     setStartingChat(true);
+    setOpenChatMenu(false);
+    setOpenContactMenuId(null);
     setSelectedUser(user);
     setErrorMessage("");
 
@@ -1794,6 +1879,11 @@ export default function ChatPage() {
         throw new Error(
           "Conversation ID tidak ditemukan."
         );
+      }
+
+      const relation = relationFor(user.id);
+      if (relation.deletedAt) {
+        await upsertContactRelation(user.id, { deleted_at: null });
       }
 
       const conversation: Conversation =
@@ -1877,13 +1967,15 @@ export default function ChatPage() {
         );
       }
 
-      const hiddenAt =
-        getConversationHiddenAt(conversationId);
+      const relation = selectedUser ? relationFor(selectedUser.id) : null;
+      const clearedAt = relation?.chatClearedAt
+        ? new Date(relation.chatClearedAt).getTime()
+        : null;
 
       const visibleMessages =
         (data || []).filter((message) => {
-          if (!hiddenAt) return true;
-          return new Date(message.created_at).getTime() >= hiddenAt;
+          if (!clearedAt) return true;
+          return new Date(message.created_at).getTime() > clearedAt;
         });
 
       setMessages(
@@ -3452,6 +3544,14 @@ export default function ChatPage() {
             false
           );
         }
+
+        if (openContactMenuId) {
+          setOpenContactMenuId(null);
+        }
+
+        if (openChatMenu) {
+          setOpenChatMenu(false);
+        }
       }}
     >
       {/* HEADER */}
@@ -3736,19 +3836,42 @@ export default function ChatPage() {
                           </div>
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              deleteContactFromHome(user);
-                            }}
-                            disabled={startingChat}
-                            className="flex h-10 w-10 shrink-0 items-center justify-center self-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-                            title={`Hapus ${user.full_name} dari daftar kontak`}
-                            aria-label={`Hapus ${user.full_name} dari daftar kontak`}
-                          >
-                            🗑️
-                          </button>
+                          <div className="relative shrink-0 self-center">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setOpenContactMenuId((previous) => previous === user.id ? null : user.id);
+                              }}
+                              disabled={startingChat}
+                              className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
+                              title="Menu kontak"
+                              aria-label={`Menu kontak ${user.full_name}`}
+                            >
+                              ⋮
+                            </button>
+                            {openContactMenuId === user.id && (
+                              <div
+                                onClick={(event) => event.stopPropagation()}
+                                className="absolute right-0 top-11 z-50 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => { setOpenContactMenuId(null); void deleteContactFromHome(user); }}
+                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50"
+                                >
+                                  🗑️ <span>Hapus Kontak</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => { setOpenContactMenuId(null); void startChat(user); }}
+                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                >
+                                  💬 <span>Buka Chat</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       );
                     }
@@ -3875,18 +3998,42 @@ export default function ChatPage() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      deleteCurrentConversationForMe();
-                    }}
-                    className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-red-500 transition hover:bg-red-50 hover:text-red-600"
-                    title="Hapus seluruh chat dari akun saya"
-                    aria-label="Hapus seluruh chat dari akun saya"
-                  >
-                    🗑️
-                  </button>
+                  <div className="relative ml-auto shrink-0">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setOpenChatMenu((previous) => !previous);
+                      }}
+                      className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                      title="Menu chat"
+                      aria-label="Menu chat"
+                    >
+                      ⋮
+                    </button>
+                    {openChatMenu && (
+                      <div
+                        onClick={(event) => event.stopPropagation()}
+                        className="absolute right-0 top-11 z-50 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => { setOpenChatMenu(false); void deleteCurrentConversationForMe(); }}
+                          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50"
+                        >
+                          🗑️ <span>Hapus Keseluruhan Pesan</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setOpenChatMenu(false); void toggleBlockSelectedUser(); }}
+                          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                        >
+                          {selectedUser && relationFor(selectedUser.id).blockedAt ? "🔓" : "🚫"}
+                          <span>{selectedUser && relationFor(selectedUser.id).blockedAt ? "Buka Blokir" : "Blokir"}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* PESAN */}
