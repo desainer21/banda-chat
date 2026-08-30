@@ -116,6 +116,8 @@ export default function ChatPage() {
   const [openContactMenuId, setOpenContactMenuId] =
     useState<string | null>(null);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const [contactMenuPosition, setContactMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const [chatMenuPosition, setChatMenuPosition] = useState<{ top: number; left: number } | null>(null);
 
   const [selectedAttachmentFile, setSelectedAttachmentFile] =
     useState<File | null>(null);
