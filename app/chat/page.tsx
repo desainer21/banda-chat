@@ -68,6 +68,14 @@ export default function ChatPage() {
   const [contactInfo, setContactInfo] =
     useState<Record<string, ContactInfo>>({});
 
+  // Menu tiga titik pada daftar kontak.
+  const [openContactMenuUserId, setOpenContactMenuUserId] =
+    useState<string | null>(null);
+
+  // Menu tiga titik pada header chat.
+  const [chatMenuOpen, setChatMenuOpen] =
+    useState(false);
+
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [selectedConversation, setSelectedConversation] =
     useState<Conversation | null>(null);
@@ -238,6 +246,19 @@ export default function ChatPage() {
     }
 
     if (existing?.deleted_at) {
+      /*
+       * Saat pengguna sendiri membuka kembali kontak dari pencarian,
+       * batas chat baru dibuat dari waktu aktivasi.
+       *
+       * Tetapi saat fungsi ini dipanggil karena PESAN BARU masuk,
+       * pesan tersebut sudah dibuat beberapa milidetik sebelumnya.
+       * Jika chat_cleared_at diubah ke `now`, pesan baru justru bisa
+       * ikut tersembunyi karena loadContactInfo() memakai:
+       *
+       * message.created_at > chat_cleared_at
+       *
+       * Karena itu alur realtime harus mempertahankan batas lama.
+       */
       const updateData = preserveChatBoundary
         ? {
             deleted_at: null,
@@ -344,6 +365,102 @@ export default function ChatPage() {
     return now;
   }
 
+  async function blockContactRelation(
+    ownerId: string,
+    contactId: string
+  ) {
+    const now = new Date().toISOString();
+
+    const existing = await getContactRelation(
+      ownerId,
+      contactId
+    );
+
+    if (existing) {
+      const { error } = await supabase
+        .from("contact_relations")
+        .update({
+          blocked_at: now,
+          deleted_at: now,
+          chat_cleared_at: now,
+        })
+        .eq("owner_id", ownerId)
+        .eq("contact_id", contactId);
+
+      if (error) {
+        throw new Error(
+          "Gagal memblokir kontak: " + error.message
+        );
+      }
+
+      return;
+    }
+
+    const { error } = await supabase
+      .from("contact_relations")
+      .insert({
+        owner_id: ownerId,
+        contact_id: contactId,
+        blocked_at: now,
+        deleted_at: now,
+        chat_cleared_at: now,
+      });
+
+    if (error) {
+      throw new Error(
+        "Gagal memblokir kontak: " + error.message
+      );
+    }
+  }
+
+  async function blockContactFromHome(user: Profile) {
+    if (!currentUserId) return;
+
+    const confirmed = window.confirm(
+      `Blokir ${user.full_name}?\\n\\nKontak ini akan dihapus dari beranda dan pesan baru dari akun tersebut tidak akan mengaktifkan kembali kontak ini.`
+    );
+
+    if (!confirmed) {
+      setOpenContactMenuUserId(null);
+      return;
+    }
+
+    try {
+      await blockContactRelation(
+        currentUserId,
+        user.id
+      );
+
+      setContactInfo((previous) => {
+        const next = { ...previous };
+        delete next[user.id];
+        return next;
+      });
+
+      setOpenContactMenuUserId(null);
+
+      if (selectedUser?.id === user.id) {
+        setSelectedConversation(null);
+        setSelectedUser(null);
+        setMessages([]);
+        setMessageText("");
+        setMobileChatOpen(false);
+        setChatMenuOpen(false);
+      }
+    } catch (error) {
+      console.error(
+        "Block contact error:",
+        error
+      );
+
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Gagal memblokir kontak."
+      );
+    }
+  }
+
   async function deleteCurrentConversationForMe() {
     if (!selectedConversation || !selectedUser || !currentUserId) {
       return;
@@ -372,6 +489,7 @@ export default function ChatPage() {
       setSelectedUser(null);
       setMessageText("");
       setMobileChatOpen(false);
+      setChatMenuOpen(false);
     } catch (error) {
       console.error(
         "Delete current conversation error:",
@@ -2257,18 +2375,40 @@ export default function ChatPage() {
               payload.new as Message;
 
             /*
-             * PENTING: untuk menentukan pengirim pesan masuk,
-             * jangan mencari lawan chat dari conversation_members.
-             * Pada alur ini sender_id sudah langsung merupakan ID
-             * akun pengirim. Query conversation_members sebelumnya
-             * bisa gagal/RLS dan membuat kontak tidak pernah muncul.
+             * Cari lawan chat terlebih dahulu. Ini harus terjadi
+             * sebelum loadContactInfo(), karena penerima mungkin
+             * sebelumnya sudah menghapus kontak tersebut.
              */
-            const incomingContactUserId =
-              newMessage.sender_id !== currentUserId
-                ? newMessage.sender_id
-                : null;
+            const {
+              data: conversationMembers,
+              error: conversationMembersError,
+            } = await supabase
+              .from("conversation_members")
+              .select("user_id")
+              .eq(
+                "conversation_id",
+                newMessage.conversation_id
+              );
 
-            /* Pesan yang kita kirim sendiri. */
+            if (conversationMembersError) {
+              console.error(
+                "Incoming contact members error:",
+                conversationMembersError
+              );
+              return;
+            }
+
+            const incomingContactUserId =
+              (conversationMembers || [])
+                .map((member) => member.user_id)
+                .find(
+                  (userId) =>
+                    userId !== currentUserId
+                );
+
+            /*
+             * Pesan yang kita kirim sendiri.
+             */
             if (
               newMessage.sender_id ===
               currentUserId
@@ -2278,11 +2418,11 @@ export default function ChatPage() {
             }
 
             /*
-             * AKTIFKAN RELASI PENERIMA TERLEBIH DAHULU.
-             * Jika pengirim sebelumnya sudah dihapus dari kontak,
-             * deleted_at harus menjadi NULL sebelum loadContactInfo()
-             * dijalankan. chat_cleared_at lama sengaja dipertahankan
-             * agar pesan lama yang sudah dihapus tidak kembali.
+             * FIX UTAMA:
+             * Penerima sendiri harus mengaktifkan kembali relasinya.
+             * Sebelumnya kode hanya mengubah state React, lalu
+             * loadContactInfo() membaca deleted_at dan membuang kontak
+             * lagi. Sekarang database diperbaiki terlebih dahulu.
              */
             if (incomingContactUserId) {
               try {
@@ -2292,6 +2432,10 @@ export default function ChatPage() {
                   true
                 );
               } catch (error) {
+                /*
+                 * Jika kontak memang diblokir, jangan membuka blokir
+                 * secara otomatis.
+                 */
                 console.error(
                   "Reactivate incoming contact error:",
                   error
@@ -2304,7 +2448,9 @@ export default function ChatPage() {
               newMessage.conversation_id ===
               selectedConversationIdRef.current;
 
-            /* Chat sedang terbuka. */
+            /*
+             * Chat sedang terbuka: tampilkan pesan dan tandai dibaca.
+             */
             if (isCurrentConversation) {
               setMessages((previous) => {
                 const exists = previous.some(
@@ -2316,17 +2462,21 @@ export default function ChatPage() {
                   return previous;
                 }
 
-                return [...previous, newMessage];
+                return [
+                  ...previous,
+                  newMessage,
+                ];
               });
 
-              const { error } =
-                await supabase.rpc(
-                  "mark_conversation_read",
-                  {
-                    p_conversation_id:
-                      newMessage.conversation_id,
-                  }
-                );
+              const {
+                error,
+              } = await supabase.rpc(
+                "mark_conversation_read",
+                {
+                  p_conversation_id:
+                    newMessage.conversation_id,
+                }
+              );
 
               if (error) {
                 console.error(
@@ -2338,12 +2488,18 @@ export default function ChatPage() {
               const now =
                 new Date().toISOString();
 
-              setMessages((previous) =>
-                previous.map((message) =>
-                  message.id === newMessage.id
-                    ? { ...message, read_at: now }
-                    : message
-                )
+              setMessages(
+                (previous) =>
+                  previous.map(
+                    (message) =>
+                      message.id ===
+                      newMessage.id
+                        ? {
+                            ...message,
+                            read_at: now,
+                          }
+                        : message
+                  )
               );
 
               await loadContactInfo(
@@ -2353,8 +2509,8 @@ export default function ChatPage() {
             }
 
             /*
-             * Chat tidak sedang dibuka: tampilkan kontak segera
-             * supaya tidak perlu refresh halaman.
+             * Chat tidak sedang dibuka: tampilkan kontak dan unread
+             * segera, lalu sinkronkan ulang dari database.
              */
             if (incomingContactUserId) {
               setContactInfo((previous) => {
@@ -2377,14 +2533,13 @@ export default function ChatPage() {
               });
             }
 
-            /* Sinkronkan dari database setelah relasi aktif. */
             await loadContactInfo(
               currentUserId
             );
 
             /*
-             * Pastikan pesan terakhir tetap tampil jika ada load lain
-             * yang selesai bersamaan.
+             * Pastikan event terakhir tidak hilang jika ada refresh
+             * lain yang selesai bersamaan.
              */
             if (incomingContactUserId) {
               setContactInfo((previous) => {
@@ -2438,7 +2593,6 @@ export default function ChatPage() {
       );
     };
   }, [currentUserId]);
-
 
   /* ============================================================
      REALTIME ACTIVE CONVERSATION
@@ -3986,7 +4140,10 @@ export default function ChatPage() {
                         >
                           <button
                             type="button"
-                            onClick={() => void startChat(user)}
+                            onClick={() => {
+                               setOpenContactMenuUserId(null);
+                               void startChat(user);
+                             }}
                             disabled={startingChat}
                             className="min-w-0 flex-1 rounded-xl p-2 text-left disabled:cursor-not-allowed disabled:opacity-60"
                           >
@@ -4065,19 +4222,58 @@ export default function ChatPage() {
                           </div>
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              deleteContactFromHome(user);
-                            }}
-                            disabled={startingChat}
-                            className="flex h-10 w-10 shrink-0 items-center justify-center self-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-                            title={`Hapus ${user.full_name} dari daftar kontak`}
-                            aria-label={`Hapus ${user.full_name} dari daftar kontak`}
-                          >
-                            🗑️
-                          </button>
+                          <div className="relative shrink-0 self-center">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setOpenContactMenuUserId(
+                                  (previous) =>
+                                    previous === user.id
+                                      ? null
+                                      : user.id
+                                );
+                              }}
+                              disabled={startingChat}
+                              className="flex h-10 w-10 items-center justify-center rounded-xl text-lg font-bold text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                              title={`Menu ${user.full_name}`}
+                              aria-label={`Menu ${user.full_name}`}
+                            >
+                              ⋮
+                            </button>
+
+                            {openContactMenuUserId === user.id && (
+                              <div
+                                onClick={(event) =>
+                                  event.stopPropagation()
+                                }
+                                className="absolute right-0 top-11 z-50 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenContactMenuUserId(null);
+                                    void deleteContactFromHome(user);
+                                  }}
+                                  className="flex w-full items-center gap-2 px-3 py-3 text-left text-xs font-semibold text-slate-600 hover:bg-slate-50 active:bg-slate-100"
+                                >
+                                  <span>🗑️</span>
+                                  <span>Hapus kontak</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void blockContactFromHome(user)
+                                  }
+                                  className="flex w-full items-center gap-2 px-3 py-3 text-left text-xs font-semibold text-red-600 hover:bg-red-50 active:bg-red-100"
+                                >
+                                  <span>🚫</span>
+                                  <span>Blokir kontak</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       );
                     }
@@ -4204,18 +4400,43 @@ export default function ChatPage() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      deleteCurrentConversationForMe();
-                    }}
-                    className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-red-500 transition hover:bg-red-50 hover:text-red-600"
-                    title="Hapus seluruh chat dari akun saya"
-                    aria-label="Hapus seluruh chat dari akun saya"
-                  >
-                    🗑️
-                  </button>
+                  <div className="relative ml-auto shrink-0">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setChatMenuOpen(
+                          (previous) => !previous
+                        );
+                      }}
+                      className="flex h-10 w-10 items-center justify-center rounded-xl text-lg font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                      title="Menu percakapan"
+                      aria-label="Menu percakapan"
+                    >
+                      ⋮
+                    </button>
+
+                    {chatMenuOpen && (
+                      <div
+                        onClick={(event) =>
+                          event.stopPropagation()
+                        }
+                        className="absolute right-0 top-11 z-50 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setChatMenuOpen(false);
+                            void deleteCurrentConversationForMe();
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-3 text-left text-xs font-semibold text-red-600 hover:bg-red-50 active:bg-red-100"
+                        >
+                          <span>🗑️</span>
+                          <span>Hapus seluruh percakapan</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* PESAN */}
