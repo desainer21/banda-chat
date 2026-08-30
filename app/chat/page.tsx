@@ -112,6 +112,11 @@ export default function ChatPage() {
 
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
 
+  // MENU KONTAK / CHAT — jangan gunakan ikon tong sampah langsung.
+  const [openContactMenuId, setOpenContactMenuId] =
+    useState<string | null>(null);
+  const [chatMenuOpen, setChatMenuOpen] = useState(false);
+
   const [selectedAttachmentFile, setSelectedAttachmentFile] =
     useState<File | null>(null);
 
@@ -191,6 +196,16 @@ export default function ChatPage() {
     selectedConversationIdRef.current =
       selectedConversation?.id || null;
   }, [selectedConversation]);
+
+  useEffect(() => {
+    function closeMenus() {
+      setOpenContactMenuId(null);
+      setChatMenuOpen(false);
+    }
+
+    document.addEventListener("click", closeMenus);
+    return () => document.removeEventListener("click", closeMenus);
+  }, []);
 
   /* ============================================================
      CONTACT RELATIONS
@@ -284,6 +299,45 @@ export default function ChatPage() {
     }
 
     return existing?.chat_cleared_at || null;
+  }
+
+  async function blockContact(ownerId: string, contactId: string) {
+    const now = new Date().toISOString();
+
+    const { data: existing, error: selectError } = await supabase
+      .from("contact_relations")
+      .select("owner_id, contact_id")
+      .eq("owner_id", ownerId)
+      .eq("contact_id", contactId)
+      .maybeSingle();
+
+    if (selectError) {
+      throw new Error("Gagal membaca relasi kontak: " + selectError.message);
+    }
+
+    if (existing) {
+      const { error } = await supabase
+        .from("contact_relations")
+        .update({ blocked_at: now, deleted_at: now })
+        .eq("owner_id", ownerId)
+        .eq("contact_id", contactId);
+
+      if (error) throw new Error("Gagal memblokir kontak: " + error.message);
+    } else {
+      const { error } = await supabase
+        .from("contact_relations")
+        .insert({
+          owner_id: ownerId,
+          contact_id: contactId,
+          deleted_at: now,
+          chat_cleared_at: now,
+          blocked_at: now,
+        });
+
+      if (error) throw new Error("Gagal memblokir kontak: " + error.message);
+    }
+
+    return now;
   }
 
   async function deleteContactRelation(
@@ -2285,18 +2339,32 @@ export default function ChatPage() {
              * agar pesan lama yang sudah dihapus tidak kembali.
              */
             if (incomingContactUserId) {
+              // Tampilkan kontak SEGERA. Jangan menunggu query relation selesai,
+              // karena kegagalan RLS/query tidak boleh membuat pesan baru hilang dari beranda.
+              setContactInfo((previous) => {
+                const existing = previous[incomingContactUserId];
+                return {
+                  ...previous,
+                  [incomingContactUserId]: {
+                    conversationId: newMessage.conversation_id,
+                    lastMessage: newMessage.content,
+                    lastMessageAt: newMessage.created_at,
+                    unreadCount: (existing?.unreadCount || 0) + 1,
+                  },
+                };
+              });
+
               try {
                 await activateContactRelation(
                   currentUserId,
-                  incomingContactUserId,
-                  true
+                  incomingContactUserId
                 );
               } catch (error) {
+                // UI sudah ditampilkan. Simpan error untuk debugging tanpa menghapus kontak dari state.
                 console.error(
                   "Reactivate incoming contact error:",
                   error
                 );
-                return;
               }
             }
 
@@ -4065,19 +4133,72 @@ export default function ChatPage() {
                           </div>
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              deleteContactFromHome(user);
-                            }}
-                            disabled={startingChat}
-                            className="flex h-10 w-10 shrink-0 items-center justify-center self-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-                            title={`Hapus ${user.full_name} dari daftar kontak`}
-                            aria-label={`Hapus ${user.full_name} dari daftar kontak`}
-                          >
-                            🗑️
-                          </button>
+                          <div className="relative shrink-0 self-center">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setOpenContactMenuId((previous) =>
+                                  previous === user.id ? null : user.id
+                                );
+                                setChatMenuOpen(false);
+                              }}
+                              disabled={startingChat}
+                              className="flex h-10 w-10 items-center justify-center rounded-xl text-xl font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:opacity-40"
+                              title="Menu kontak"
+                              aria-label="Menu kontak"
+                            >
+                              ⋮
+                            </button>
+
+                            {openContactMenuId === user.id && (
+                              <div
+                                className="absolute right-0 top-11 z-40 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenContactMenuId(null);
+                                    void deleteContactFromHome(user);
+                                  }}
+                                  className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-red-50 hover:text-red-600"
+                                >
+                                  <span>🗑️</span>
+                                  <span>Hapus kontak</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    setOpenContactMenuId(null);
+                                    if (!currentUserId) return;
+                                    if (!window.confirm(`Blokir ${user.full_name}?\n\nKontak ini tidak akan muncul lagi di daftar kontak.`)) return;
+                                    try {
+                                      await blockContact(currentUserId, user.id);
+                                      setContactInfo((previous) => {
+                                        const next = { ...previous };
+                                        delete next[user.id];
+                                        return next;
+                                      });
+                                      if (selectedUser?.id === user.id) {
+                                        setSelectedConversation(null);
+                                        setSelectedUser(null);
+                                        setMessages([]);
+                                        setMobileChatOpen(false);
+                                      }
+                                    } catch (error) {
+                                      setErrorMessage(error instanceof Error ? error.message : "Gagal memblokir kontak.");
+                                    }
+                                  }}
+                                  className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                                >
+                                  <span>🚫</span>
+                                  <span>Blokir kontak</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       );
                     }
@@ -4204,18 +4325,67 @@ export default function ChatPage() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      deleteCurrentConversationForMe();
-                    }}
-                    className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-red-500 transition hover:bg-red-50 hover:text-red-600"
-                    title="Hapus seluruh chat dari akun saya"
-                    aria-label="Hapus seluruh chat dari akun saya"
-                  >
-                    🗑️
-                  </button>
+                  <div className="relative ml-auto shrink-0">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setChatMenuOpen((previous) => !previous);
+                        setOpenContactMenuId(null);
+                      }}
+                      className="flex h-10 w-10 items-center justify-center rounded-xl text-xl font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                      title="Menu chat"
+                      aria-label="Menu chat"
+                    >
+                      ⋮
+                    </button>
+
+                    {chatMenuOpen && (
+                      <div
+                        className="absolute right-0 top-11 z-40 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setChatMenuOpen(false);
+                            void deleteCurrentConversationForMe();
+                          }}
+                          className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-red-50 hover:text-red-600"
+                        >
+                          <span>🗑️</span>
+                          <span>Hapus seluruh pesan</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setChatMenuOpen(false);
+                            if (!currentUserId || !selectedUser) return;
+                            if (!window.confirm(`Blokir ${selectedUser.full_name}?`)) return;
+                            try {
+                              await blockContact(currentUserId, selectedUser.id);
+                              setContactInfo((previous) => {
+                                const next = { ...previous };
+                                delete next[selectedUser.id];
+                                return next;
+                              });
+                              setSelectedConversation(null);
+                              setSelectedUser(null);
+                              setMessages([]);
+                              setMobileChatOpen(false);
+                            } catch (error) {
+                              setErrorMessage(error instanceof Error ? error.message : "Gagal memblokir kontak.");
+                            }
+                          }}
+                          className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                        >
+                          <span>🚫</span>
+                          <span>Blokir kontak</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* PESAN */}
