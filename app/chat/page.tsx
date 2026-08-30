@@ -3772,6 +3772,35 @@ export default function ChatPage() {
      Hanya spinner kecil + teks.
      ============================================================ */
 
+  useEffect(() => {
+    if (!openContactMenuId && !chatMenuOpen) return;
+
+    const closeMenus = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-banda-menu]")) return;
+      setOpenContactMenuId(null);
+      setContactMenuPosition(null);
+      setChatMenuOpen(false);
+      setChatMenuPosition(null);
+    };
+
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpenContactMenuId(null);
+      setContactMenuPosition(null);
+      setChatMenuOpen(false);
+      setChatMenuPosition(null);
+    };
+
+    document.addEventListener("mousedown", closeMenus);
+    document.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", closeMenus);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [openContactMenuId, chatMenuOpen]);
+
   if (loading) {
     return (
       <main className="flex min-h-[100dvh] h-[100dvh] items-center justify-center overflow-hidden bg-gradient-to-br from-blue-50 via-white to-sky-100">
@@ -4138,28 +4167,51 @@ export default function ChatPage() {
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
+                                const rect = event.currentTarget.getBoundingClientRect();
+                                const menuWidth = 192;
+                                const left = Math.max(8, Math.min(
+                                  rect.right - menuWidth,
+                                  window.innerWidth - menuWidth - 8
+                                ));
+                                const top = Math.min(
+                                  rect.bottom + 8,
+                                  window.innerHeight - 110
+                                );
+                                setContactMenuPosition(
+                                  openContactMenuId === user.id
+                                    ? null
+                                    : { top, left }
+                                );
                                 setOpenContactMenuId((previous) =>
                                   previous === user.id ? null : user.id
                                 );
                                 setChatMenuOpen(false);
+                                setChatMenuPosition(null);
                               }}
                               disabled={startingChat}
                               className="flex h-10 w-10 items-center justify-center rounded-xl text-xl font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:opacity-40"
                               title="Menu kontak"
                               aria-label="Menu kontak"
+                              data-banda-menu="contact-trigger"
                             >
                               ⋮
                             </button>
 
-                            {openContactMenuId === user.id && (
+                            {openContactMenuId === user.id && contactMenuPosition && (
                               <div
-                                className="absolute right-0 top-11 z-40 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
+                                className="fixed z-[9999] w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-2xl"
+                                style={{
+                                  top: contactMenuPosition.top,
+                                  left: contactMenuPosition.left,
+                                }}
                                 onClick={(event) => event.stopPropagation()}
+                                data-banda-menu="contact-menu"
                               >
                                 <button
                                   type="button"
                                   onClick={() => {
                                     setOpenContactMenuId(null);
+                                    setContactMenuPosition(null);
                                     void deleteContactFromHome(user);
                                   }}
                                   className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-red-50 hover:text-red-600"
@@ -4172,6 +4224,7 @@ export default function ChatPage() {
                                   type="button"
                                   onClick={async () => {
                                     setOpenContactMenuId(null);
+                                    setContactMenuPosition(null);
                                     if (!currentUserId) return;
                                     if (!window.confirm(`Blokir ${user.full_name}?\n\nKontak ini tidak akan muncul lagi di daftar kontak.`)) return;
                                     try {
@@ -4330,25 +4383,46 @@ export default function ChatPage() {
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        const menuWidth = 208;
+                        const left = Math.max(8, Math.min(
+                          rect.right - menuWidth,
+                          window.innerWidth - menuWidth - 8
+                        ));
+                        const top = Math.min(
+                          rect.bottom + 8,
+                          window.innerHeight - 110
+                        );
+                        setChatMenuPosition(
+                          chatMenuOpen ? null : { top, left }
+                        );
                         setChatMenuOpen((previous) => !previous);
                         setOpenContactMenuId(null);
+                        setContactMenuPosition(null);
                       }}
                       className="flex h-10 w-10 items-center justify-center rounded-xl text-xl font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
                       title="Menu chat"
                       aria-label="Menu chat"
+                      data-banda-menu="chat-trigger"
                     >
                       ⋮
                     </button>
 
-                    {chatMenuOpen && (
+                    {chatMenuOpen && chatMenuPosition && (
                       <div
-                        className="absolute right-0 top-11 z-40 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
+                        className="fixed z-[9999] w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-2xl"
+                        style={{
+                          top: chatMenuPosition.top,
+                          left: chatMenuPosition.left,
+                        }}
                         onClick={(event) => event.stopPropagation()}
+                        data-banda-menu="chat-menu"
                       >
                         <button
                           type="button"
                           onClick={() => {
                             setChatMenuOpen(false);
+                            setChatMenuPosition(null);
                             void deleteCurrentConversationForMe();
                           }}
                           className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-red-50 hover:text-red-600"
@@ -4361,6 +4435,7 @@ export default function ChatPage() {
                           type="button"
                           onClick={async () => {
                             setChatMenuOpen(false);
+                            setChatMenuPosition(null);
                             if (!currentUserId || !selectedUser) return;
                             if (!window.confirm(`Blokir ${selectedUser.full_name}?`)) return;
                             try {
