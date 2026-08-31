@@ -1353,6 +1353,9 @@ export default function ChatPage() {
       await loadContactInfo(
         authUserId
       );
+      await syncIncomingMessagesToContacts(
+        authUserId
+      );
     } catch (error) {
       console.error(
         "Load chat error:",
@@ -1475,18 +1478,25 @@ export default function ChatPage() {
           .eq("user_id", authUserId);
 
       if (myMembershipError) {
+        /*
+         * Jangan menghentikan seluruh daftar kontak hanya karena
+         * conversation_members gagal dibaca. Pesan INSERT tetap bisa
+         * menjadi sumber kontak melalui sender_id.
+         */
         console.error(
           "Load memberships error:",
           myMembershipError
         );
-        return;
       }
 
       if (
         !myMemberships ||
         myMemberships.length === 0
       ) {
-        setContactInfo({});
+        /* Tidak mengosongkan state lama jika query membership gagal. */
+        if (!myMembershipError) {
+          setContactInfo({});
+        }
         return;
       }
 
@@ -1510,11 +1520,15 @@ export default function ChatPage() {
           );
 
       if (allMembersError) {
+        /*
+         * conversation_members bukan lagi single point of failure.
+         * Jika RLS menolak query ini, conversationToUser akan dibangun
+         * dari sender_id pesan masuk di bawah.
+         */
         console.error(
           "Load all members error:",
           allMembersError
         );
-        return;
       }
 
       const conversationToUser: Record<
@@ -1558,6 +1572,20 @@ export default function ChatPage() {
         return;
       }
 
+      /*
+       * SUMBER KONTAK UTAMA UNTUK PESAN MASUK:
+       * sender_id sudah berisi ID akun lawan chat. Jadi kita tidak perlu
+       * menunggu conversation_members untuk mengetahui siapa pengirimnya.
+       * Ini juga membuat pesan baru dapat menghidupkan kembali kontak yang
+       * sebelumnya dihapus dari beranda.
+       */
+      (allMessages || []).forEach((message) => {
+        if (message.sender_id !== authUserId) {
+          conversationToUser[message.conversation_id] =
+            message.sender_id;
+        }
+      });
+
       const aggregatedInfo: Record<
         string,
         ContactInfo
@@ -1570,11 +1598,8 @@ export default function ChatPage() {
           const relation =
             relationByContact[userId];
 
-          /* Kontak yang dihapus/blokir tidak tampil di beranda. */
-          if (
-            relation?.deleted_at ||
-            relation?.blocked_at
-          ) {
+          /* Kontak yang diblokir tetap tidak boleh muncul otomatis. */
+          if (relation?.blocked_at) {
             return;
           }
 
@@ -1610,6 +1635,21 @@ export default function ChatPage() {
           if (
             clearedAt &&
             conversationMessages.length === 0
+          ) {
+            return;
+          }
+
+          /*
+           * Jika kontak pernah dihapus, pesan baru dari dia adalah sinyal
+           * untuk menampilkan kembali kontak tersebut. Jangan menunggu
+           * contact_relations berubah lebih dulu.
+           */
+          if (
+            relation?.deleted_at &&
+            !conversationMessages.some(
+              (message) =>
+                message.sender_id !== authUserId
+            )
           ) {
             return;
           }
@@ -1683,7 +1723,9 @@ export default function ChatPage() {
 
         /* Pertahankan kontak realtime yang baru masuk jika query ini
            selesai ketika relasi/database belum sempat terlihat konsisten. */
-        Object.entries(previous).forEach(([userId, info]) => {
+        Object.entries(
+          previous as Record<string, ContactInfo>
+        ).forEach(([userId, info]) => {
           if (!next[userId] && info?.conversationId) {
             next[userId] = info;
           }
@@ -1694,6 +1736,196 @@ export default function ChatPage() {
     } catch (error) {
       console.error(
         "Load contact info error:",
+        error
+      );
+    }
+  }
+
+  /* ============================================================
+     DIRECT INCOMING MESSAGE -> CONTACT FALLBACK
+
+     Daftar kontak penerima tidak lagi bergantung pada
+     conversation_members atau keberhasilan UPDATE contact_relations.
+     Pesan yang sudah tersimpan di messages sendiri sudah membawa
+     sender_id, conversation_id, created_at, dan read_at.
+     ============================================================ */
+  async function syncIncomingMessagesToContacts(
+    authUserId: string
+  ) {
+    if (!authUserId) return;
+
+    try {
+      const {
+        data: relations,
+        error: relationsError,
+      } = await supabase
+        .from("contact_relations")
+        .select(
+          "contact_id, deleted_at, chat_cleared_at, blocked_at"
+        )
+        .eq("owner_id", authUserId);
+
+      if (relationsError) {
+        console.error(
+          "Incoming contact relations sync error:",
+          relationsError
+        );
+        return;
+      }
+
+      const relationByContact: Record<
+        string,
+        {
+          deleted_at: string | null;
+          chat_cleared_at: string | null;
+          blocked_at: string | null;
+        }
+      > = {};
+
+      (relations || []).forEach((relation) => {
+        relationByContact[relation.contact_id] = {
+          deleted_at: relation.deleted_at,
+          chat_cleared_at: relation.chat_cleared_at,
+          blocked_at: relation.blocked_at,
+        };
+      });
+
+      const {
+        data: incomingMessages,
+        error: incomingMessagesError,
+      } = await supabase
+        .from("messages")
+        .select(
+          "id, conversation_id, sender_id, content, created_at, read_at, updated_at"
+        )
+        .neq("sender_id", authUserId)
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      if (incomingMessagesError) {
+        console.error(
+          "Incoming messages contact sync error:",
+          incomingMessagesError
+        );
+        return;
+      }
+
+      if (!incomingMessages || incomingMessages.length === 0) {
+        return;
+      }
+
+      const grouped: Record<string, ContactInfo> = {};
+
+      incomingMessages.forEach((message) => {
+        const senderId = message.sender_id;
+        const relation = relationByContact[senderId];
+
+        /* Kontak yang diblokir tidak pernah dibuka otomatis. */
+        if (relation?.blocked_at) {
+          return;
+        }
+
+        const messageTime = new Date(message.created_at).getTime();
+        const clearedAt = relation?.chat_cleared_at
+          ? new Date(relation.chat_cleared_at).getTime()
+          : null;
+
+        /* Pesan sebelum batas hapus kontak tetap tersembunyi. */
+        if (clearedAt && messageTime <= clearedAt) {
+          return;
+        }
+
+        const existing = grouped[senderId];
+
+        if (!existing) {
+          grouped[senderId] = {
+            conversationId: message.conversation_id,
+            lastMessage: message.content,
+            lastMessageAt: message.created_at,
+            unreadCount: message.read_at ? 0 : 1,
+          };
+          return;
+        }
+
+        if (!message.read_at) {
+          existing.unreadCount += 1;
+        }
+      });
+
+      const senderIds = Object.keys(grouped);
+
+      if (senderIds.length === 0) {
+        return;
+      }
+
+      /* Pastikan akun pengirim ada di daftar users yang dirender beranda. */
+      const knownUserIds = new Set(
+        users.map((user) => user.id)
+      );
+      const missingUserIds = senderIds.filter(
+        (id) => !knownUserIds.has(id)
+      );
+
+      if (missingUserIds.length > 0) {
+        const { data: missingProfiles, error: missingProfilesError } =
+          await supabase
+            .from("profiles")
+            .select("id, full_name, username, avatar_url")
+            .in("id", missingUserIds);
+
+        if (missingProfilesError) {
+          console.error(
+            "Incoming contact profile sync error:",
+            missingProfilesError
+          );
+        } else if (missingProfiles?.length) {
+          setUsers((previous) => {
+            const byId = new Map(
+              previous.map((user) => [user.id, user])
+            );
+            missingProfiles.forEach((user) => {
+              byId.set(user.id, user);
+            });
+            return Array.from(byId.values()).sort((a, b) =>
+              a.full_name.localeCompare(b.full_name)
+            );
+          });
+        }
+      }
+
+      setContactInfo((previous) => {
+        const next = { ...previous };
+
+        Object.entries(grouped).forEach(([userId, info]) => {
+          const existing = next[userId];
+
+          /*
+           * Jika state realtime sudah lebih baru daripada hasil polling,
+           * jangan mundurkan preview/waktu/unread-nya.
+           */
+          if (
+            existing?.lastMessageAt &&
+            info.lastMessageAt &&
+            new Date(existing.lastMessageAt).getTime() >
+              new Date(info.lastMessageAt).getTime()
+          ) {
+            return;
+          }
+
+          next[userId] = {
+            ...info,
+            unreadCount: Math.max(
+              existing?.unreadCount || 0,
+              info.unreadCount
+            ),
+          };
+        });
+
+        return next;
+      });
+    } catch (error) {
+      console.error(
+        "Direct incoming message contact sync error:",
         error
       );
     }
@@ -2417,26 +2649,6 @@ export default function ChatPage() {
              * loadContactInfo() membaca deleted_at dan membuang kontak
              * lagi. Sekarang database diperbaiki terlebih dahulu.
              */
-            if (incomingContactUserId) {
-              try {
-                await activateContactRelation(
-                  currentUserId,
-                  incomingContactUserId,
-                  true
-                );
-              } catch (error) {
-                /*
-                 * Jika kontak memang diblokir, jangan membuka blokir
-                 * secara otomatis.
-                 */
-                console.error(
-                  "Reactivate incoming contact error:",
-                  error
-                );
-                return;
-              }
-            }
-
             const isCurrentConversation =
               newMessage.conversation_id ===
               selectedConversationIdRef.current;
@@ -2495,6 +2707,22 @@ export default function ChatPage() {
                   )
               );
 
+              if (incomingContactUserId) {
+                try {
+                  await activateContactRelation(
+                    currentUserId,
+                    incomingContactUserId,
+                    true
+                  );
+                } catch (error) {
+                  /* UI chat tidak boleh gagal hanya karena sinkronisasi relasi gagal. */
+                  console.error(
+                    "Reactivate incoming contact error:",
+                    error
+                  );
+                }
+              }
+
               await loadContactInfo(
                 currentUserId
               );
@@ -2525,6 +2753,26 @@ export default function ChatPage() {
                   },
                 };
               });
+            }
+
+            if (incomingContactUserId) {
+              try {
+                await activateContactRelation(
+                  currentUserId,
+                  incomingContactUserId,
+                  true
+                );
+              } catch (error) {
+                /*
+                 * Gagal menulis contact_relations tidak boleh membatalkan
+                 * tampilan kontak realtime. Jika diblokir, tetap dibiarkan
+                 * tersembunyi pada sinkronisasi berikutnya.
+                 */
+                console.error(
+                  "Sync incoming contact relation error:",
+                  error
+                );
+              }
             }
 
             /*
@@ -2586,7 +2834,20 @@ export default function ChatPage() {
         )
         .subscribe();
 
+    /*
+     * FALLBACK REALTIME:
+     * Jika browser/Supabase tidak mengirim postgres_changes INSERT kepada
+     * halaman penerima, daftar kontak tetap direkonsiliasi otomatis.
+     * Ini tidak mengubah chat/menu yang sudah bekerja dan hanya membaca
+     * data terbaru secara berkala.
+     */
+    const contactSyncTimer = window.setInterval(() => {
+      void loadContactInfo(currentUserId);
+      void syncIncomingMessagesToContacts(currentUserId);
+    }, 2000);
+
     return () => {
+      window.clearInterval(contactSyncTimer);
       void supabase.removeChannel(
         channel
       );
