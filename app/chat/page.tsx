@@ -1678,9 +1678,19 @@ export default function ChatPage() {
         }
       );
 
-      setContactInfo(
-        aggregatedInfo
-      );
+      setContactInfo((previous) => {
+        const next = { ...aggregatedInfo };
+
+        /* Pertahankan kontak realtime yang baru masuk jika query ini
+           selesai ketika relasi/database belum sempat terlihat konsisten. */
+        Object.entries(previous).forEach(([userId, info]) => {
+          if (!next[userId] && info?.conversationId) {
+            next[userId] = info;
+          }
+        });
+
+        return next;
+      });
     } catch (error) {
       console.error(
         "Load contact info error:",
@@ -2375,36 +2385,19 @@ export default function ChatPage() {
               payload.new as Message;
 
             /*
-             * Cari lawan chat terlebih dahulu. Ini harus terjadi
-             * sebelum loadContactInfo(), karena penerima mungkin
-             * sebelumnya sudah menghapus kontak tersebut.
+             * PENTING: jangan query conversation_members untuk menentukan
+             * pengirim pesan masuk. Pada event INSERT, sender_id sudah
+             * merupakan ID akun yang mengirim pesan.
+             *
+             * Query conversation_members sebelumnya membuat realtime
+             * bergantung pada RLS tabel tersebut. Jika query ditolak atau
+             * terlambat, handler langsung return sehingga akun pengirim
+             * tidak pernah dimasukkan ke daftar kontak penerima.
              */
-            const {
-              data: conversationMembers,
-              error: conversationMembersError,
-            } = await supabase
-              .from("conversation_members")
-              .select("user_id")
-              .eq(
-                "conversation_id",
-                newMessage.conversation_id
-              );
-
-            if (conversationMembersError) {
-              console.error(
-                "Incoming contact members error:",
-                conversationMembersError
-              );
-              return;
-            }
-
             const incomingContactUserId =
-              (conversationMembers || [])
-                .map((member) => member.user_id)
-                .find(
-                  (userId) =>
-                    userId !== currentUserId
-                );
+              newMessage.sender_id !== currentUserId
+                ? newMessage.sender_id
+                : null;
 
             /*
              * Pesan yang kita kirim sendiri.
@@ -2510,7 +2503,8 @@ export default function ChatPage() {
 
             /*
              * Chat tidak sedang dibuka: tampilkan kontak dan unread
-             * segera, lalu sinkronkan ulang dari database.
+             * segera. Jangan bergantung pada hasil query daftar kontak
+             * untuk menampilkan pesan baru.
              */
             if (incomingContactUserId) {
               setContactInfo((previous) => {
@@ -2533,9 +2527,14 @@ export default function ChatPage() {
               });
             }
 
-            await loadContactInfo(
-              currentUserId
-            );
+            /*
+             * Rekonsiliasi database dilakukan setelah state realtime
+             * dipasang. Delay kecil mencegah hasil query lama menimpa
+             * kontak baru yang baru saja masuk.
+             */
+            window.setTimeout(() => {
+              void loadContactInfo(currentUserId);
+            }, 350);
 
             /*
              * Pastikan event terakhir tidak hilang jika ada refresh
@@ -3781,6 +3780,45 @@ export default function ChatPage() {
         );
       }
     );
+
+  /* ============================================================
+     OPEN CHAT DARI NOTIFIKASI
+     ============================================================
+     Mendukung tautan seperti /chat?chat=<sender_user_id>.
+     Ini membuat klik notifikasi langsung membuka percakapan, bukan
+     kembali ke halaman kosong/beranda.
+     ============================================================ */
+
+  useEffect(() => {
+    if (!currentUserId || !users.length) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const targetUserId =
+      params.get("chat") ||
+      params.get("sender") ||
+      params.get("user");
+
+    if (!targetUserId || targetUserId === currentUserId) return;
+
+    const targetUser = users.find(
+      (user) => user.id === targetUserId
+    );
+
+    if (!targetUser) return;
+
+    /* Hapus parameter lebih dahulu supaya refresh tidak membuka ulang. */
+    params.delete("chat");
+    params.delete("sender");
+    params.delete("user");
+    const query = params.toString();
+    window.history.replaceState(
+      {},
+      "",
+      window.location.pathname + (query ? `?${query}` : "")
+    );
+
+    void startChat(targetUser);
+  }, [currentUserId, users]);
 
   /* ============================================================
      LOGOUT
