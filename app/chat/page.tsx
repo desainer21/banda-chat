@@ -2422,61 +2422,79 @@ export default function ChatPage() {
       }
 
       /*
-       * Jangan memakai selectedUser di sini.
-       * setSelectedUser() bersifat asynchronous, sehingga ketika
-       * loadMessages() dipanggil tepat setelah startChat(), state
-       * bisa masih berisi user sebelumnya. Cari lawan chat langsung
-       * dari conversation_members agar batas chat selalu benar.
+       * PENTING: pesan yang berhasil dibaca dari tabel messages
+       * harus langsung dipasang ke halaman chat.
+       *
+       * Sebelumnya setMessages() baru dijalankan SETELAH query
+       * conversation_members. Jika query tersebut terkena RLS/error,
+       * fungsi berhenti dan halaman chat menjadi kosong walaupun data
+       * pesan sebenarnya sudah berhasil didapat dari tabel messages.
+       *
+       * Karena perbaikan daftar kontak sudah berhasil, bagian ini
+       * sekarang hanya fokus memastikan PESAN masuk tetap tampil.
+       */
+      let visibleMessages = data || [];
+
+      /*
+       * Terapkan batas chat_cleared_at hanya jika informasi anggota
+       * percakapan berhasil dibaca. Kegagalan query anggota TIDAK BOLEH
+       * menghapus pesan dari UI.
        */
       let clearedAt: number | null = null;
 
-      const {
-        data: conversationMembers,
-        error: conversationMembersError,
-      } = await supabase
-        .from("conversation_members")
-        .select("user_id")
-        .eq(
-          "conversation_id",
-          conversationId
-        );
-
-      if (conversationMembersError) {
-        throw new Error(
-          conversationMembersError.message
-        );
-      }
-
-      const otherMember =
-        (conversationMembers || []).find(
-          (member) =>
-            member.user_id !== authUserId
-        );
-
-      if (otherMember?.user_id) {
-        const relation =
-          await getContactRelation(
-            authUserId,
-            otherMember.user_id
+      try {
+        const {
+          data: conversationMembers,
+          error: conversationMembersError,
+        } = await supabase
+          .from("conversation_members")
+          .select("user_id")
+          .eq(
+            "conversation_id",
+            conversationId
           );
 
-        if (relation?.chat_cleared_at) {
-          clearedAt = new Date(
-            relation.chat_cleared_at
-          ).getTime();
+        if (conversationMembersError) {
+          console.error(
+            "Load conversation members for messages error:",
+            conversationMembersError
+          );
+        } else {
+          const otherMember =
+            (conversationMembers || []).find(
+              (member) =>
+                member.user_id !== authUserId
+            );
+
+          if (otherMember?.user_id) {
+            const relation =
+              await getContactRelation(
+                authUserId,
+                otherMember.user_id
+              );
+
+            if (relation?.chat_cleared_at) {
+              clearedAt = new Date(
+                relation.chat_cleared_at
+              ).getTime();
+            }
+          }
         }
+      } catch (membershipError) {
+        console.error(
+          "Optional conversation member lookup error:",
+          membershipError
+        );
       }
 
-      const visibleMessages =
-        (data || []).filter((message) => {
-          if (!clearedAt) return true;
-
-          return (
+      if (clearedAt) {
+        visibleMessages = visibleMessages.filter(
+          (message) =>
             new Date(
               message.created_at
-            ).getTime() > clearedAt
-          );
-        });
+            ).getTime() > clearedAt!
+        );
+      }
 
       setMessages(
         visibleMessages
